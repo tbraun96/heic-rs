@@ -20,14 +20,18 @@ extern crate std;
 pub mod boxes;
 pub mod error;
 pub mod ftyp;
+pub mod grid;
 pub mod hevc;
+pub mod image;
 pub mod meta;
 pub mod props;
 pub mod reader;
 
 pub use crate::error::{Error, Result};
 pub use crate::ftyp::Brand;
+pub use crate::grid::Grid;
 pub use crate::hevc::ChromaFormat;
+pub use crate::image::{DEFAULT_MAX_PIXELS, DecodeOptions, Image, PixelLayout};
 pub use crate::props::Transform;
 pub use crate::props::colr::{MatrixCoefficients, Nclx, Range};
 pub use crate::props::simple::{Mirror, Rotation};
