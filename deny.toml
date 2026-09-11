@@ -1,0 +1,51 @@
+# cargo-deny configuration. Run locally with `cargo deny check`; CI runs
+# EmbarkStudios/cargo-deny-action@v2 on every push and pull request.
+#
+# This file uses the current (non-deprecated) schema: the `version = 2` opt-ins
+# under [advisories] and [licenses] replace the old per-severity keys
+# (`vulnerability`, `unmaintained`, `yanked`, `unlicensed`, `copyleft`,
+# `allow-osi-fsf-free`), which are gone and would warn if used.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# Advisories to ignore, each with a comment explaining why. Empty on purpose:
+# heic-rs has zero required dependencies, so the only graph here is criterion's
+# dev-dependency tree.
+ignore = []
+
+[licenses]
+version = 2
+# heic-rs is MIT OR Apache-2.0 and intends to stay permissively licensed. Nothing
+# copyleft may enter the dependency graph, which is a large part of why the crate
+# exists at all.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.93
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# No crate is banned outright yet. If an LGPL or AGPL HEIC binding is ever pulled
+# in transitively, it belongs here as well as failing the licence check.
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

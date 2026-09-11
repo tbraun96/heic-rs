@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+type: software
+title: "heic-rs"
+abstract: >-
+  A pure-Rust HEIC/HEIF image decoder with no C dependencies. It parses the ISOBMFF container,
+  resolves items and item properties, derives grid images by compositing tiles, applies rotation and
+  mirror transforms, extracts EXIF and ICC metadata, and converts YUV to RGB. The crate forbids
+  unsafe code, has no required dependencies, and its core is no_std plus alloc so it builds for
+  wasm32-unknown-unknown. As of version 0.1.0 the container half is complete and the HEVC
+  still-picture decoder is not yet linked in, so probe() is fully functional while decode() returns
+  an Unsupported error at the codec seam.
+authors:
+  - family-names: "Braun"
+    given-names: "Thomas"
+    email: "tbraun96@gmail.com"
+version: "0.1.0"
+license: "MIT OR Apache-2.0"
+repository-code: "https://github.com/tbraun96/heic-rs"
+url: "https://docs.rs/heic-rs"
+keywords:
+  - "heic"
+  - "heif"
+  - "hevc"
+  - "image-decoder"
+  - "rust"
+  - "no-std"
+  - "webassembly"
+  - "isobmff"
