@@ -1,0 +1,104 @@
+name: Release
+
+# Publishes to crates.io with a long-lived API token held in
+# secrets.CARGO_REGISTRY_TOKEN. That is a stopgap: crates.io Trusted Publishing
+# (OIDC) is the intended successor, and it lets this workflow authenticate with a
+# short-lived token minted from the GitHub Actions identity instead of a secret
+# stored in the repository. Trusted Publishing has to be configured against a
+# crate that already exists, so the first publish must use the token. Migrate
+# right after the first release, then delete the secret and the env block below.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          tag_version="${tag#v}"
+          manifest_version=$(grep -m1 -E '^version[[:space:]]*=' Cargo.toml \
+            | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          echo "tag:      ${tag} (version ${tag_version})"
+          echo "manifest: ${manifest_version}"
+          if [ -z "${manifest_version}" ]; then
+            echo "::error::could not read the version field from Cargo.toml"
+            exit 1
+          fi
+          if [ "${tag_version}" != "${manifest_version}" ]; then
+            echo "::error::tag ${tag} does not match Cargo.toml version ${manifest_version}"
+            exit 1
+          fi
+          echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: publish to crates.io
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Ensure a lockfile exists for --locked
+        run: test -f Cargo.lock || cargo generate-lockfile
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
+
+  examples:
+    name: examples ${{ matrix.os }}
+    needs: publish
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux-x86_64
+            ext: ""
+          - os: macos-latest
+            suffix: macos-arm64
+            ext: ""
+          - os: windows-latest
+            suffix: windows-x86_64
+            ext: ".exe"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the examples in release mode
+        run: cargo build --release --examples
+      - name: Stage the binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for name in decode probe to_png; do
+            cp "target/release/examples/${name}${{ matrix.ext }}" \
+               "dist/heic-rs-${name}-${{ matrix.suffix }}${{ matrix.ext }}"
+          done
+          ls -l dist
+      - name: Attach the binaries to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true

@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest support for a container feature, a pixel layout, or an API change.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the README's "Supported and not supported" and "Roadmap" sections first.
+        Encoding is out of scope and will not be added.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and where the crate stops you.
+      placeholder: >-
+        I need to read overlay-composed HEIFs produced by a scanner, and iovl derivation returns
+        Error::Unsupported.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: >-
+        A sketch of the API or behaviour. If it touches the public surface, show the signature you
+        have in mind.
+      render: rust
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: Specification reference
+      description: >-
+        If this is a container or codec feature, cite the clause (ISO/IEC 23008-12, ISO/IEC 14496-12,
+        or ITU-T H.265) so the implementation has something to be checked against.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Workarounds you tried, and why they are not enough.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints this must respect
+      description: >-
+        These are hard rules for this crate. Confirming that your proposal fits them saves a round
+        trip.
+      options:
+        - label: It can be implemented without `unsafe`
+        - label: It does not require a C dependency or a build script
+        - label: It does not perform I/O outside the `io` module
+        - label: It works, or degrades cleanly, on a `no_std` plus `alloc` build

@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  line-guard:
+    name: line guard (250 per file)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that no tracked Rust file exceeds 250 lines
+        shell: bash
+        run: |
+          set -euo pipefail
+          limit=250
+          offenders=0
+          checked=0
+          while IFS= read -r file; do
+            checked=$((checked + 1))
+            lines=$(wc -l < "$file" | tr -d '[:space:]')
+            if [ "$lines" -gt "$limit" ]; then
+              echo "::error file=${file}::${file} has ${lines} lines (limit ${limit})"
+              printf '%6s  %s\n' "$lines" "$file"
+              offenders=$((offenders + 1))
+            fi
+          done < <(git ls-files -z '*.rs' | tr '\0' '\n')
+          echo "checked ${checked} tracked .rs file(s) against a ${limit}-line limit"
+          if [ "$offenders" -gt 0 ]; then
+            echo "${offenders} file(s) over the limit; split them along a real seam."
+            exit 1
+          fi
+          echo "all clear"
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: test ${{ matrix.os }} / ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, "1.85"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        if: matrix.rust == 'stable'
+      - uses: dtolnay/rust-toolchain@1.85
+        if: matrix.rust == '1.85'
+      - uses: Swatinem/rust-cache@v2
+      - name: Test with all features
+        run: cargo test --all-features
+      - name: Test without default features (no_std core)
+        run: cargo test --no-default-features
+
+  wasm:
+    name: wasm32-unknown-unknown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --target wasm32-unknown-unknown --no-default-features
+
+  docs:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  publish-dry-run:
+    name: publish dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate a lockfile so --locked has something to lock against
+        run: cargo generate-lockfile
+      - run: cargo publish --dry-run --locked

@@ -1,0 +1,90 @@
+name: Bug report
+description: A HEIC file that fails, a wrong result, a panic, or a hang.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: the HEVC decoder is not linked in yet, so `decode()` returning
+        `Error::Unsupported("the HEVC decoder is not linked in this build")` is expected
+        behaviour and not a bug. See the Status section of the README.
+
+        If this is a security issue (a panic, hang, or unbounded allocation on untrusted
+        input), please report it privately instead. See SECURITY.md.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        I called probe() on the attached file and got Error::Malformed("iloc extent out of range").
+        Preview.app opens the same file without complaint.
+    validations:
+      required: true
+
+  - type: textarea
+    id: probe-output
+    attributes:
+      label: probe() output
+      description: >-
+        The output of `cargo run --example probe -- <file>`, or the Debug formatting of the
+        ImageInfo. If probe() itself is what failed, paste the error.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: file
+    attributes:
+      label: The file that failed
+      description: >-
+        How the file was produced (iPhone model and iOS version, macOS `sips`, a camera, another
+        encoder) and its size in bytes.
+      placeholder: "iPhone 14 Pro, iOS 17.4, 2.1 MB, 4032x3024"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shareable
+    attributes:
+      label: Can you share the file?
+      description: >-
+        A reproducer is worth far more than a description. If you cannot share the original, a
+        truncated or re-encoded file that still reproduces the problem is fine.
+      options:
+        - "Yes, I can attach it to this issue"
+        - "Yes, but privately by email"
+        - "No, but I can describe or generate an equivalent"
+        - "No"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: heic-rs version
+      description: The crate version, or the commit hash if you are building from git.
+      placeholder: "0.1.0 (or commit abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: "macOS 15.3 arm64, rustc 1.85.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: DecodeOptions and features
+      description: >-
+        The DecodeOptions you passed, and whether you built with default features, `--no-default-features`,
+        or a wasm target.
+      render: rust
+    validations:
+      required: false

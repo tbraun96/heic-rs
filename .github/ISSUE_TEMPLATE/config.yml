@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/tbraun96/heic-rs/discussions
+    about: >-
+      Usage questions, design discussion, and anything that is not yet a concrete bug or feature
+      request.
+  - name: Report a security vulnerability
+    url: https://github.com/tbraun96/heic-rs/security/advisories/new
+    about: >-
+      Panics, hangs, or unbounded allocations on untrusted input. Please report these privately
+      rather than in a public issue. See SECURITY.md.
