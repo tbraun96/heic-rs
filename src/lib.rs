@@ -18,7 +18,8 @@ extern crate alloc;
 extern crate std;
 
 pub mod error;
+pub mod hevc;
 pub mod reader;
 
-
 pub use crate::error::{Error, Result};
+pub use crate::hevc::ChromaFormat;
