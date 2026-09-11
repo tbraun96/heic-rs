@@ -18,6 +18,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod boxes;
+pub mod color;
 pub mod error;
 pub mod ftyp;
 pub mod grid;
@@ -26,6 +27,7 @@ pub mod image;
 pub mod meta;
 pub mod props;
 pub mod reader;
+pub mod upsample;
 
 pub use crate::error::{Error, Result};
 pub use crate::ftyp::Brand;
