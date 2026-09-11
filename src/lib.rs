@@ -17,9 +17,12 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod boxes;
 pub mod error;
+pub mod ftyp;
 pub mod hevc;
 pub mod reader;
 
 pub use crate::error::{Error, Result};
+pub use crate::ftyp::Brand;
 pub use crate::hevc::ChromaFormat;
