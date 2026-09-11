@@ -21,6 +21,7 @@ pub mod boxes;
 pub mod error;
 pub mod ftyp;
 pub mod hevc;
+pub mod meta;
 pub mod reader;
 
 pub use crate::error::{Error, Result};
