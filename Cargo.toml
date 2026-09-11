@@ -25,6 +25,18 @@ std = []
 
 [dev-dependencies]
 
+[[example]]
+name = "decode"
+required-features = ["std"]
+
+[[example]]
+name = "probe"
+required-features = ["std"]
+
+[[example]]
+name = "to_png"
+required-features = ["std"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
