@@ -124,12 +124,22 @@ fn run(frame: &Frame, c: &Coeffs, mode: Mode, image: &mut Image, threads: Option
 /// sits on it. Re-run that group before changing this.
 const ROWS_PER_BAND: usize = 16;
 
-/// Below this many pixels a conversion is over before a pool could be woken,
-/// so it is done on the calling thread whatever the caller asked for.
-/// 2048x1536 converts in about 2 ms serially; a quarter-megapixel image in
-/// about 170 us, which is still worth splitting, and a 512x512 one in 40 us,
-/// which is not.
-const PARALLEL_FLOOR_PIXELS: u64 = 256 * 1024;
+/// Below this many pixels the conversion runs on the calling thread whatever
+/// the caller asked for.
+///
+/// Measured whole-file, not in isolation, because the two disagree. On its
+/// own, converting 512x512 4:2:0 to RGB8 takes 181 us serially and 50 us on a
+/// warm pool; but in a decode of a single coded picture the pool has been
+/// asleep for the whole of the codec's run, and waking it costs more than
+/// the split saves: `gradient-512.heic` (262144 pixels) decodes in 2.04 ms
+/// with colour serial and 2.13 to 2.20 ms with it pooled, on an Apple M3 Max
+/// with 16 threads — and the README's own quiet-machine table shows the same
+/// sign, 2.04 against 2.07. A 768x768 single picture (589824 pixels) is the
+/// smallest measured that gains whole-file: 1.27 ms serial against 1.08 ms
+/// pooled. The floor is that size. Grids are not affected in practice: their
+/// tiles have just run on the pool, so it is awake, and any grid is larger
+/// than this anyway.
+const PARALLEL_FLOOR_PIXELS: u64 = 768 * 768;
 
 /// Convert the image in row bands, on as many threads as the caller allowed.
 ///
