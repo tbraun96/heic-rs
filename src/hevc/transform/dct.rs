@@ -3,7 +3,16 @@
 //! coefficients") and the final bit-depth shift of clause 8.6.2.
 //!
 //! Written from the specification text alone. No code, table layout or
-//! butterfly schedule was taken from any existing decoder.
+//! butterfly schedule was taken from any existing decoder. The matrices
+//! themselves are built in `matrix`, which is the only place the standard's
+//! tabulated cosine appears.
+
+#[path = "dct_matrix.rs"]
+mod matrix;
+
+#[cfg(test)]
+pub(crate) use matrix::{DCT_MATRIX, DST_MATRIX};
+use matrix::{M4, M8, M16, M32, MDST};
 
 /// Lower bound `coeffMin` on an intermediate transform coefficient (16 bit).
 const COEFF_MIN: i32 = -32768;
@@ -15,105 +24,6 @@ const STAGE1_SHIFT: u32 = 7;
 const MIN_BIT_DEPTH: u8 = 8;
 /// Highest bit depth this module accepts (H.265 range extensions cap).
 const MAX_BIT_DEPTH: u8 = 16;
-
-/// One quarter period of the integer cosine used by `transMatrix`, indexed by
-/// the reduced angle `j` in units of pi/64. `CTAB[j]` is the magnitude of
-/// `64 * sqrt(2) * cos(pi * j / 64)` as tabulated by the standard.
-const CTAB: [i16; 33] = [
-    0, 90, 90, 90, 89, 88, 87, 85, 83, 82, 80, 78, 75, 73, 70, 67, 64, 61, 57, 54, 50, 46, 43, 38,
-    36, 31, 25, 22, 18, 13, 9, 4, 0,
-];
-
-/// Builds the 32x32 `transMatrix` of clause 8.6.4.2 from [`CTAB`] by folding
-/// the angle `k * (2n + 1) * pi / 64` into the tabulated quarter period.
-const fn build_dct() -> [[i16; 32]; 32] {
-    let mut m = [[0i16; 32]; 32];
-    let mut n = 0;
-    while n < 32 {
-        m[0][n] = 64;
-        n += 1;
-    }
-    let mut k = 1;
-    while k < 32 {
-        let mut n = 0;
-        while n < 32 {
-            let mut j = (k * (2 * n + 1)) % 128;
-            if j > 64 {
-                j = 128 - j;
-            }
-            m[k][n] = if j <= 32 { CTAB[j] } else { -CTAB[64 - j] };
-            n += 1;
-        }
-        k += 1;
-    }
-    m
-}
-
-/// The 4x4 DST-VII matrix of clause 8.6.4.2, the single source for
-/// [`DST_MATRIX`] and for the `i32` copy used by the transform itself.
-const DST_DATA: [[i16; 4]; 4] = [
-    [29, 55, 74, 84],
-    [74, 74, 0, -74],
-    [84, -29, -74, 55],
-    [55, -84, 74, -29],
-];
-
-/// The 32-point HEVC DCT-II integer matrix `transMatrix` of clause 8.6.4.2; the
-/// `nTbS`-point matrix is the row sub-sampling `DCT_MATRIX[m * (32 / nTbS)][n]`
-/// for `m`, `n` < `nTbS`. Materialised only for the tests that validate it: the
-/// transform itself uses the `i32` copies produced by [`sub`].
-#[cfg(test)]
-pub static DCT_MATRIX: [[i16; 32]; 32] = build_dct();
-
-/// The 4x4 HEVC DST-VII integer matrix of clause 8.6.4.2, used for the
-/// 4x4 luma intra residual. Materialised only for the tests; see
-/// [`DCT_MATRIX`].
-#[cfg(test)]
-pub static DST_MATRIX: [[i16; 4]; 4] = DST_DATA;
-
-/// Row sub-samples [`build_dct`] down to the `N`-point matrix and widens it to
-/// `i32` so the hot loops never sign-extend.
-const fn sub<const N: usize>() -> [[i32; N]; N] {
-    let full = build_dct();
-    let step = 32 / N;
-    let mut m = [[0i32; N]; N];
-    let mut k = 0;
-    while k < N {
-        let mut n = 0;
-        while n < N {
-            m[k][n] = full[k * step][n] as i32;
-            n += 1;
-        }
-        k += 1;
-    }
-    m
-}
-
-/// Widens [`DST_DATA`] to `i32` for the hot loops.
-const fn dst_i32() -> [[i32; 4]; 4] {
-    let mut m = [[0i32; 4]; 4];
-    let mut k = 0;
-    while k < 4 {
-        let mut n = 0;
-        while n < 4 {
-            m[k][n] = DST_DATA[k][n] as i32;
-            n += 1;
-        }
-        k += 1;
-    }
-    m
-}
-
-/// 4-point DCT-II matrix.
-const M4: [[i32; 4]; 4] = sub::<4>();
-/// 8-point DCT-II matrix.
-const M8: [[i32; 8]; 8] = sub::<8>();
-/// 16-point DCT-II matrix.
-const M16: [[i32; 16]; 16] = sub::<16>();
-/// 32-point DCT-II matrix.
-const M32: [[i32; 32]; 32] = sub::<32>();
-/// 4-point DST-VII matrix.
-const MDST: [[i32; 4]; 4] = dst_i32();
 
 /// `Clip3(coeffMin, coeffMax, v)` of clause 5, written without `clamp` so that
 /// the transform keeps no panicking path at all.
@@ -143,12 +53,18 @@ const fn bd_shift_of(bit_depth: u8) -> Option<u32> {
 /// exactly as clause 8.6.4.2 writes it. Accumulating over `j` on the outside
 /// keeps the inner loop a contiguous multiply-accumulate over two slices.
 ///
+/// `terms` is how many of `src`'s entries may be non-zero; the rest add
+/// nothing and are not read. Dropping them is exact, not an approximation.
+///
 /// The largest attainable magnitude is `32 * 32768 * 90 = 94_371_840`, well
 /// inside `i32`, because both stages take 16-bit-clipped inputs.
-fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N]) -> [i32; N] {
+fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i32; N] {
     let mut acc = [0i32; N];
-    for j in 0..N {
+    for j in 0..core::cmp::min(terms, N) {
         let c = src[j];
+        if c == 0 {
+            continue;
+        }
         let row = &m[j];
         for i in 0..N {
             acc[i] += row[i] * c;
@@ -157,27 +73,49 @@ fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N]) -> [i32; N] {
     acc
 }
 
+/// The smallest `(rows, cols)` rectangle at the block's top-left corner that
+/// holds every non-zero coefficient.
+///
+/// Residual coding sends a last-significant-coefficient position and nothing
+/// beyond it, so for anything but the flattest content most of a 16x16 or
+/// 32x32 block is zero. Both 1-D stages sum over an index that those zeros
+/// index directly, so bounding them here removes the work rather than
+/// approximating it, and the result is bit-identical.
+fn extent<const N: usize>(b: &[i32]) -> (usize, usize) {
+    let (mut rows, mut cols) = (0usize, 0usize);
+    for (y, row) in b.chunks_exact(N).enumerate() {
+        if let Some(x) = row.iter().rposition(|&v| v != 0) {
+            rows = y + 1;
+            cols = core::cmp::max(cols, x + 1);
+        }
+    }
+    (rows, cols)
+}
+
 /// The two-dimensional inverse transform for one `N`x`N` block.
 ///
 /// `block` is row-major with `d[x][y]` at `block[y * N + x]`; it is overwritten
 /// with the residual `r[x][y]` at the same position.
 fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32) {
     let b = &mut block[..N * N];
-    // g[y][x], the clipped output of the column stage.
+    let (rows, cols) = extent::<N>(b);
+    // g[y][x], the clipped output of the column stage. Columns at or past
+    // `cols` have an all-zero source, so they stay zero and are not computed;
+    // the second stage is then told to stop summing there.
     let mut g = [[0i32; N]; N];
     let mut col = [0i32; N];
-    for x in 0..N {
-        for j in 0..N {
+    for x in 0..cols {
+        for j in 0..rows {
             col[j] = b[j * N + x];
         }
-        let e = mul_1d(m, &col);
+        let e = mul_1d(m, &col, rows);
         for y in 0..N {
             g[y][x] = clip_coeff((e[y] + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
         }
     }
     let rnd = 1i32 << (bd_shift - 1);
     for y in 0..N {
-        let r = mul_1d(m, &g[y]);
+        let r = mul_1d(m, &g[y], cols);
         for i in 0..N {
             b[y * N + i] = (r[i] + rnd) >> bd_shift;
         }
