@@ -19,10 +19,6 @@ pub(crate) enum Source<'a> {
     Mosaic(&'a Mosaic<'a>),
 }
 
-/// Two chroma rows of both planes: Cb row `r0`, Cb row `r1`, Cr row `r0`,
-/// Cr row `r1`.
-pub(crate) type ChromaRows<'b> = [&'b [u16]; 4];
-
 impl Source<'_> {
     /// Width in luma samples.
     pub fn width(&self) -> u32 {
@@ -62,11 +58,11 @@ impl Source<'_> {
     }
 
     /// Scratch samples a band needs to assemble rows: none for a frame; one
-    /// luma row and four chroma rows for a mosaic.
+    /// luma row and one chroma row for a mosaic.
     pub fn stitch_len(&self) -> usize {
         match self {
             Source::Frame(_) => 0,
-            Source::Mosaic(_) => self.width() as usize + 4 * self.chroma_width(),
+            Source::Mosaic(_) => self.width() as usize + self.chroma_width(),
         }
     }
 
@@ -86,36 +82,20 @@ impl Source<'_> {
         }
     }
 
-    /// Chroma rows `r0` and `r1` of both planes, assembled into `buf` when
-    /// the source is a mosaic.
-    pub fn chroma_rows<'b>(
-        &'b self,
-        r0: usize,
-        r1: usize,
-        buf: &'b mut [u16],
-    ) -> Option<ChromaRows<'b>> {
+    /// Row `r` of the Cb plane (`cr` false) or the Cr plane (`cr` true),
+    /// assembled into `buf` when the source is a mosaic.
+    pub fn chroma_row<'b>(&'b self, cr: bool, r: usize, buf: &'b mut [u16]) -> Option<&'b [u16]> {
         let cw = self.chroma_width();
         match self {
             Source::Frame(f) => {
-                let stride = f.c_stride as usize;
-                let (o0, o1) = (r0.checked_mul(stride)?, r1.checked_mul(stride)?);
-                Some([
-                    f.cb.get(o0..o0 + cw)?,
-                    f.cb.get(o1..o1 + cw)?,
-                    f.cr.get(o0..o0 + cw)?,
-                    f.cr.get(o1..o1 + cw)?,
-                ])
+                let start = r.checked_mul(f.c_stride as usize)?;
+                let plane = if cr { &f.cr } else { &f.cb };
+                plane.get(start..start + cw)
             }
             Source::Mosaic(m) => {
-                let (b0, rest) = buf.split_at_mut_checked(cw)?;
-                let (b1, rest) = rest.split_at_mut_checked(cw)?;
-                let (v0, rest) = rest.split_at_mut_checked(cw)?;
-                let v1 = rest.get_mut(..cw)?;
-                m.chroma_row(false, r0, b0)?;
-                m.chroma_row(false, r1, b1)?;
-                m.chroma_row(true, r0, v0)?;
-                m.chroma_row(true, r1, v1)?;
-                Some([b0, b1, v0, v1])
+                let row = buf.get_mut(..cw)?;
+                m.chroma_row(cr, r, row)?;
+                Some(row)
             }
         }
     }

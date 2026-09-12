@@ -5,6 +5,7 @@
 //! branches on the pixel layout: the layout is a set of const parameters, and
 //! one loop is compiled per layout.
 
+use crate::color::chroma::Ring;
 use crate::color::fixed::{AlphaScale, Coeffs};
 use crate::color::source::Source;
 use crate::hevc::Frame;
@@ -21,25 +22,30 @@ pub(crate) enum Mode {
     Matrix,
 }
 
-/// Scratch samples one band needs: two upsampled chroma rows unless the
-/// conversion is luma-only, plus whatever the source needs to assemble rows.
-pub(crate) fn scratch_len(src: &Source<'_>, mode: Mode) -> usize {
-    let upsampled = if mode == Mode::Luma {
+/// Samples the chroma ring needs: none when no chroma is read.
+fn ring_len(width: usize, mode: Mode) -> usize {
+    if mode == Mode::Luma {
         0
     } else {
-        2 * src.width() as usize
-    };
-    upsampled + src.stitch_len()
+        Ring::len(width)
+    }
+}
+
+/// Scratch samples one band needs: the expanded chroma rows unless the
+/// conversion is luma-only, plus whatever the source needs to assemble rows.
+pub(crate) fn scratch_len(src: &Source<'_>, mode: Mode) -> usize {
+    ring_len(src.width() as usize, mode) + src.stitch_len()
 }
 
 /// Convert a band of rows of `src` into `out`.
 ///
 /// `N` is bytes per output pixel, `BGR` swaps red and blue, and `WIDE` selects
 /// 16-bit channels. `out` holds the output rows starting at `y0`, and its
-/// length says how many there are. `scratch` is [`scratch_len`] samples: two
-/// upsampled chroma rows, reused for every row in the band, which is what
-/// keeps a full-resolution chroma plane from ever existing, followed by the
-/// source's own row-assembly space.
+/// length says how many there are. `scratch` is [`scratch_len`] samples: a
+/// [`Ring`] of horizontally expanded chroma rows, reused down the band, which
+/// is what keeps a full-resolution chroma plane from ever existing, followed
+/// by the source's own row-assembly space. The vertical blend between two
+/// expanded rows happens inside the colour loop itself.
 ///
 /// A band depends on nothing but the source planes, so bands may be converted
 /// in any order or at the same time; `crate::parallel` is what decides.
@@ -55,9 +61,8 @@ pub(crate) fn planes<const N: usize, const BGR: bool, const WIDE: bool>(
     let chroma = src.chroma();
     let ch = chroma.chroma_size(src.width(), src.height()).1 as usize;
     let x_shift = chroma.x_shift();
-    let upsampled = if mode == Mode::Luma { 0 } else { 2 * w };
-    let (up, stitch) = scratch.split_at_mut(core::cmp::min(upsampled, scratch.len()));
-    let (cb_row, cr_row) = up.split_at_mut(up.len() / 2);
+    let (ring, stitch) = scratch.split_at_mut(core::cmp::min(ring_len(w, mode), scratch.len()));
+    let mut ring = Ring::new(ring, w);
     let (luma_buf, chroma_buf) = stitch.split_at_mut(core::cmp::min(w, stitch.len()));
     let rows = out.len().checked_div(w * N).unwrap_or(0);
     for band_row in 0..rows {
@@ -73,15 +78,20 @@ pub(crate) fn planes<const N: usize, const BGR: bool, const WIDE: bool>(
             continue;
         }
         let (r0, r1, w0) = upsample::row_pair(y, ch, chroma);
-        let Some([b0, b1, v0, v1]) = src.chroma_rows(r0, r1, chroma_buf) else {
+        let (Some(s0), Some(s1)) = (
+            ring.slot(src, r0, x_shift, chroma_buf),
+            ring.slot(src, r1, x_shift, chroma_buf),
+        ) else {
             return;
         };
-        upsample::row(cb_row, b0, b1, w0, x_shift);
-        upsample::row(cr_row, v0, v1, w0, x_shift);
+        let (Some((cb0, cr0)), Some((cb1, cr1))) = (ring.get(s0), ring.get(s1)) else {
+            return;
+        };
+        let rows = [cb0, cb1, cr0, cr1];
         if mode == Mode::Identity {
-            row_identity::<N, BGR, WIDE>(dst, luma, cb_row, cr_row, c);
+            row_identity::<N, BGR, WIDE>(dst, luma, rows, w0, c);
         } else {
-            row_matrix::<N, BGR, WIDE>(dst, luma, cb_row, cr_row, c);
+            row_matrix::<N, BGR, WIDE>(dst, luma, rows, w0, c);
         }
     }
 }
@@ -108,6 +118,22 @@ fn store<const N: usize, const BGR: bool, const WIDE: bool>(
     }
 }
 
+/// Walk two expanded chroma rows of each plane, blending them vertically
+/// into one `(cb, cr)` sample per column.
+#[inline(always)]
+fn blended<'a>(rows: [&'a [u16]; 4], w0: u32) -> impl Iterator<Item = (u16, u16)> + 'a {
+    let [cb0, cb1, cr0, cr1] = rows;
+    cb0.iter()
+        .zip(cb1)
+        .zip(cr0.iter().zip(cr1))
+        .map(move |((a0, a1), (b0, b1))| {
+            (
+                upsample::vblend(*a0, *a1, w0),
+                upsample::vblend(*b0, *b1, w0),
+            )
+        })
+}
+
 /// Grey: one luma sample becomes all three channels.
 fn row_luma<const N: usize, const BGR: bool, const WIDE: bool>(
     dst: &mut [u8],
@@ -127,17 +153,20 @@ fn row_luma<const N: usize, const BGR: bool, const WIDE: bool>(
 fn row_identity<const N: usize, const BGR: bool, const WIDE: bool>(
     dst: &mut [u8],
     luma: &[u16],
-    cb: &[u16],
-    cr: &[u16],
+    rows: [&[u16]; 4],
+    w0: u32,
     c: &Coeffs,
 ) {
-    for (px, ((y, u), v)) in dst.chunks_exact_mut(N).zip(luma.iter().zip(cb).zip(cr)) {
+    for (px, (y, (u, v))) in dst
+        .chunks_exact_mut(N)
+        .zip(luma.iter().zip(blended(rows, w0)))
+    {
         let Ok(px) = <&mut [u8; N]>::try_from(px) else {
             return;
         };
         let g = c.finish((i32::from(*y) - c.y_offset) * c.ky);
-        let b = c.finish((i32::from(*u) - c.y_offset) * c.ky);
-        let r = c.finish((i32::from(*v) - c.y_offset) * c.ky);
+        let b = c.finish((i32::from(u) - c.y_offset) * c.ky);
+        let r = c.finish((i32::from(v) - c.y_offset) * c.ky);
         store::<N, BGR, WIDE>(px, r, g, b, c.max_out);
     }
 }
@@ -146,17 +175,20 @@ fn row_identity<const N: usize, const BGR: bool, const WIDE: bool>(
 fn row_matrix<const N: usize, const BGR: bool, const WIDE: bool>(
     dst: &mut [u8],
     luma: &[u16],
-    cb: &[u16],
-    cr: &[u16],
+    rows: [&[u16]; 4],
+    w0: u32,
     c: &Coeffs,
 ) {
-    for (px, ((y, cbv), crv)) in dst.chunks_exact_mut(N).zip(luma.iter().zip(cb).zip(cr)) {
+    for (px, (y, (cbv, crv))) in dst
+        .chunks_exact_mut(N)
+        .zip(luma.iter().zip(blended(rows, w0)))
+    {
         let Ok(px) = <&mut [u8; N]>::try_from(px) else {
             return;
         };
         let yy = (i32::from(*y) - c.y_offset) * c.ky;
-        let u = i32::from(*cbv) - c.c_offset;
-        let v = i32::from(*crv) - c.c_offset;
+        let u = i32::from(cbv) - c.c_offset;
+        let v = i32::from(crv) - c.c_offset;
         let r = c.finish(yy + c.rv * v);
         let g = c.finish(yy + c.gu * u + c.gv * v);
         let b = c.finish(yy + c.bu * u);

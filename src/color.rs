@@ -11,12 +11,15 @@
 //! The matrix is integer, not floating point: the private `fixed` module folds
 //! the sample scaling, the matrix and the output maximum into five `i32`
 //! coefficients, so a channel costs one multiply-accumulate, one rounded shift
-//! and one clamp. The chroma upsampler is fused into the walk: a conversion
-//! holds two upsampled chroma *rows*, never two chroma planes. The loops
-//! themselves live in the private `kernel` module, one compiled per pixel
-//! layout, and none of them branches on the layout or indexes a plane per
-//! sample.
+//! and one clamp. The chroma upsampler is fused into the walk: a band holds a
+//! three-slot ring of horizontally expanded chroma *rows*, never a chroma
+//! plane, and blends them vertically inside the colour loop, so each chroma
+//! row is expanded once. The loops themselves live in the private `kernel`
+//! module, one compiled per pixel layout, and none of them branches on the
+//! layout or indexes a plane per sample. A grid's tiles are read in place
+//! through the private `source` module rather than composed first.
 
+mod chroma;
 mod fixed;
 mod kernel;
 mod source;
