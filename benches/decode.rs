@@ -8,8 +8,11 @@
 //!   dominates a large photograph once the codec is fast.
 //! - `color_convert` — YCbCr to RGB with chroma upsampling.
 //!
-//! There is deliberately no end-to-end decode benchmark: the codec seam is
-//! still a placeholder, so such a number would measure nothing.
+//! - `color_threads` — the same conversion serial and on the pool, which is
+//!   what picks `ROWS_PER_BAND` and the floor below which colour stays on the
+//!   calling thread.
+//! - `decode_file` — the whole thing, bytes in and RGB8 out, over the
+//!   fixtures, serial and on the pool.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use heic_rs::hevc::{ChromaFormat, Frame};
@@ -98,6 +101,7 @@ fn color_convert(c: &mut Criterion) {
                                 nclx,
                                 layout,
                                 u64::MAX,
+                                None,
                             )
                         })
                     });
@@ -118,6 +122,7 @@ fn color_convert(c: &mut Criterion) {
                     nclx,
                     PixelLayout::Rgb16,
                     u64::MAX,
+                    None,
                 )
             })
         });
@@ -125,5 +130,60 @@ fn color_convert(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, container_parse, grid_compose, color_convert);
+/// Serial against pooled, at the sizes where the answer changes.
+fn color_threads(c: &mut Criterion) {
+    let mut group = c.benchmark_group("color_threads");
+    let nclx = heic_rs::Nclx::default();
+    for (w, h) in [(512u32, 512u32), (1024, 1024), (2048, 1536), (4032, 3024)] {
+        let f = frame(w, h, ChromaFormat::Yuv420, 8);
+        group.throughput(Throughput::Elements(u64::from(w) * u64::from(h)));
+        for (tag, threads) in [("serial", Some(1)), ("pool", None)] {
+            group.bench_function(format!("{w}x{h} {tag}"), |b| {
+                b.iter(|| {
+                    heic_rs::color::convert(
+                        std::hint::black_box(&f),
+                        None,
+                        nclx,
+                        PixelLayout::Rgb8,
+                        u64::MAX,
+                        threads,
+                    )
+                })
+            });
+        }
+    }
+    group.finish();
+}
+
+/// The number a caller actually waits for: a file in, RGB8 out.
+fn decode_file(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_file");
+    for name in ["gradient-512.heic", "checker-1024.heic", "photo-2048.heic"] {
+        let Some(bytes) = fixture(name) else { continue };
+        let Ok(info) = heic_rs::probe(&bytes) else {
+            continue;
+        };
+        group.throughput(Throughput::Elements(
+            u64::from(info.width) * u64::from(info.height),
+        ));
+        for (tag, threads) in [("serial", Some(1)), ("pool", None)] {
+            let options = heic_rs::DecodeOptions::default()
+                .with_layout(PixelLayout::Rgb8)
+                .with_threads(threads);
+            group.bench_function(format!("{name} {tag}"), |b| {
+                b.iter(|| heic_rs::decode(std::hint::black_box(&bytes), &options))
+            });
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    container_parse,
+    grid_compose,
+    color_convert,
+    color_threads,
+    decode_file
+);
 criterion_main!(benches);
