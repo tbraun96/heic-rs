@@ -7,6 +7,14 @@ use crate::hevc::intra::Refs;
 /// the unavailable ones.
 ///
 /// `x` and `y` are in the coordinates of component `c_idx`, `n` is `nTbS`.
+///
+/// `Dec::available` reads its argument only through `z`, which is indexed in
+/// minimum transform blocks, and through the CTB address, which is coarser
+/// still. Every reference sample inside one minimum transform block therefore
+/// gets the same answer, so the three runs — left column, corner, top row —
+/// are walked one such block at a time: one clause 6.4.1 derivation per
+/// block, and the samples of an available block copied as a run rather than
+/// addressed one by one.
 pub fn gather_refs(d: &Dec<'_>, x: usize, y: usize, n: usize, c_idx: usize) -> Refs {
     let (sw, sh) = if c_idx == 0 {
         (1usize, 1usize)
@@ -25,51 +33,78 @@ pub fn gather_refs(d: &Dec<'_>, x: usize, y: usize, n: usize, c_idx: usize) -> R
     };
     let (xc, yc) = (x * sw, y * sh);
     let total = 4 * n + 1;
+    let (stride, data) = (plane.stride, plane.data.as_slice());
     let mut r = Refs::new(n);
     let mut avail = [false; 129];
-    // `Dec::available` reads its argument only through `z`, which is indexed
-    // in minimum transform blocks, and through the CTB address, which is
-    // coarser still. Every reference sample inside one minimum transform
-    // block therefore gets the same answer, and this walk crosses one block
-    // every four luma samples. Remembering the last answer turns the clause
-    // 6.4.1 derivation from once per sample into once per block; the run is
-    // contiguous, so a single-entry memo catches all of it.
-    let shift = d.geo.min_tb_log2;
-    let mut memo: Option<((usize, usize), bool)> = None;
-    // Index 0 is p[-1][2n-1]; index 2n the corner; index 4n is p[2n-1][-1].
-    for (i, a) in avail.iter_mut().enumerate().take(total) {
-        let (cx, cy) = if i <= 2 * n {
-            (-1isize, 2 * n as isize - 1 - i as isize)
-        } else {
-            ((i - 2 * n - 1) as isize, -1isize)
-        };
-        let nx = x as isize + cx;
-        let ny = y as isize + cy;
-        if nx < 0 || ny < 0 || nx as usize >= plane.width || ny as usize >= plane.height {
-            continue;
-        }
-        let lx = (x as isize + cx) * sw as isize;
-        let ly = (y as isize + cy) * sh as isize;
-        let key = ((lx as usize) >> shift, (ly as usize) >> shift);
-        let ok = match memo {
-            Some((k, v)) if k == key => v,
-            _ => {
-                let v = d.available(xc, yc, lx, ly);
-                memo = Some((key, v));
-                v
+    // One minimum transform block spans this many samples of this component
+    // along each axis; never zero, as `sub_w` and `sub_h` are 1 or 2 and the
+    // minimum transform block is at least 4 luma samples wide.
+    let min_tb = 1usize << d.geo.min_tb_log2;
+    let (step_x, step_y) = ((min_tb / sw).max(1), (min_tb / sh).max(1));
+    let mut all = true;
+
+    // Index 0 is p[-1][2n-1] and index 2n-1 is p[-1][0]: the left column,
+    // walked downwards from the block's top edge.
+    if x > 0 {
+        let col = x - 1;
+        let mut k = 0;
+        while k < 2 * n {
+            let yy = y + k;
+            if yy >= plane.height {
+                all = false;
+                break;
             }
-        };
-        if !ok {
-            continue;
+            if d.available(xc, yc, (col * sw) as isize, (yy * sh) as isize) {
+                let end = (yy + step_y).min(plane.height).min(y + 2 * n);
+                for (j, yj) in (yy..end).enumerate() {
+                    r.buf[2 * n - 1 - k - j] = data[yj * stride + col];
+                    avail[2 * n - 1 - k - j] = true;
+                }
+            } else {
+                all = false;
+            }
+            k += step_y;
         }
-        if d.pps.constrained_intra_pred {
-            // Every coding unit in an intra-only picture is an intra CU, so the
-            // constrained intra prediction check can never remove a sample here.
-        }
-        *a = true;
-        r.buf[i] = plane.at(nx as usize, ny as usize);
+    } else {
+        all = false;
     }
-    substitute(&mut r, &avail, total, bit_depth);
+
+    // Index 2n is the corner p[-1][-1].
+    if x > 0 && y > 0 && d.available(xc, yc, ((x - 1) * sw) as isize, ((y - 1) * sh) as isize) {
+        r.buf[2 * n] = data[(y - 1) * stride + x - 1];
+        avail[2 * n] = true;
+    } else {
+        all = false;
+    }
+
+    // Indices 2n+1 ..= 4n are p[0][-1] ..= p[2n-1][-1]: the top row.
+    if y > 0 {
+        let row = (y - 1) * stride;
+        let mut k = 0;
+        while k < 2 * n {
+            let xx = x + k;
+            if xx >= plane.width {
+                all = false;
+                break;
+            }
+            if d.available(xc, yc, (xx * sw) as isize, ((y - 1) * sh) as isize) {
+                let end = (xx + step_x).min(plane.width).min(x + 2 * n);
+                let i0 = 2 * n + 1 + k;
+                let len = end - xx;
+                r.buf[i0..i0 + len].copy_from_slice(&data[row + xx..row + end]);
+                avail[i0..i0 + len].fill(true);
+            } else {
+                all = false;
+            }
+            k += step_x;
+        }
+    } else {
+        all = false;
+    }
+
+    if !all {
+        substitute(&mut r, &avail, total, bit_depth);
+    }
     r
 }
 
