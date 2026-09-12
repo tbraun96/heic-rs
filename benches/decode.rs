@@ -11,7 +11,7 @@
 //! There is deliberately no end-to-end decode benchmark: the codec seam is
 //! still a placeholder, so such a number would measure nothing.
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use heic_rs::hevc::{ChromaFormat, Frame};
 use heic_rs::image::PixelLayout;
 
@@ -21,15 +21,21 @@ fn fixture(name: &str) -> Option<Vec<u8>> {
 }
 
 fn synthetic(width: u32, height: u32) -> Frame {
-    let (cw, ch) = ChromaFormat::Yuv420.chroma_size(width, height);
+    frame(width, height, ChromaFormat::Yuv420, 8)
+}
+
+/// A frame of non-constant samples, so nothing folds away.
+fn frame(width: u32, height: u32, chroma: ChromaFormat, depth: u8) -> Frame {
+    let (cw, ch) = chroma.chroma_size(width, height);
+    let top = (1u32 << depth) - 1;
     Frame {
         width,
         height,
-        bit_depth: 8,
-        chroma: ChromaFormat::Yuv420,
-        y: (0..width * height).map(|i| (i % 255) as u16).collect(),
-        cb: (0..cw * ch).map(|i| (i % 255) as u16).collect(),
-        cr: (0..cw * ch).map(|i| (i % 200) as u16).collect(),
+        bit_depth: depth,
+        chroma,
+        y: (0..width * height).map(|i| (i % top) as u16).collect(),
+        cb: (0..cw * ch).map(|i| (i % top) as u16).collect(),
+        cr: (0..cw * ch).map(|i| (i % (top - 55)) as u16).collect(),
         y_stride: width,
         c_stride: cw,
     }
@@ -67,25 +73,52 @@ fn grid_compose(c: &mut Criterion) {
     group.finish();
 }
 
+/// Every size, sampling, depth and layout the colour step is expected to be
+/// fast at. Throughput is set to the pixel count, so criterion reports the
+/// figure the README quotes directly.
 fn color_convert(c: &mut Criterion) {
     let mut group = c.benchmark_group("color_convert");
     let nclx = heic_rs::Nclx::default();
-    for (w, h) in [(512u32, 512u32), (2048, 1536)] {
-        let frame = synthetic(w, h);
-        for layout in [PixelLayout::Rgb8, PixelLayout::Rgba8, PixelLayout::Rgb16] {
-            group.bench_function(format!("{w}x{h} {layout:?}"), |b| {
-                b.iter(|| {
-                    heic_rs::color::convert(
-                        std::hint::black_box(&frame),
-                        None,
-                        nclx,
-                        layout,
-                        u64::MAX,
-                    )
-                })
-            });
+    let layouts = [PixelLayout::Rgb8, PixelLayout::Rgba8, PixelLayout::Gray8];
+    for (w, h) in [(512u32, 512u32), (2048, 1536), (4032, 3024)] {
+        group.throughput(Throughput::Elements(u64::from(w) * u64::from(h)));
+        for (chroma, tag) in [
+            (ChromaFormat::Yuv420, "4:2:0"),
+            (ChromaFormat::Yuv444, "4:4:4"),
+        ] {
+            for depth in [8u8, 10] {
+                let f = frame(w, h, chroma, depth);
+                for layout in layouts {
+                    let name = format!("{w}x{h} {tag} {depth}bit {layout:?}");
+                    group.bench_function(name, |b| {
+                        b.iter(|| {
+                            heic_rs::color::convert(
+                                std::hint::black_box(&f),
+                                None,
+                                nclx,
+                                layout,
+                                u64::MAX,
+                            )
+                        })
+                    });
+                }
+            }
         }
     }
+    // One 16-bit case, to show what the wider output costs.
+    let f = frame(2048, 1536, ChromaFormat::Yuv420, 10);
+    group.throughput(Throughput::Elements(2048 * 1536));
+    group.bench_function("2048x1536 4:2:0 10bit Rgb16", |b| {
+        b.iter(|| {
+            heic_rs::color::convert(
+                std::hint::black_box(&f),
+                None,
+                nclx,
+                PixelLayout::Rgb16,
+                u64::MAX,
+            )
+        })
+    });
     group.finish();
 }
 
