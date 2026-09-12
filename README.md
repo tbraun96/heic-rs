@@ -306,7 +306,9 @@ The colour step was the slow part of this crate and is no longer. It used to mat
 full-resolution chroma planes and then run a scalar `f32` matrix with a bounds-checked index per
 sample; it now expands chroma one row at a time into a reused pair of row buffers and applies an
 integer fixed-point matrix through one loop per pixel layout. `color_convert` covers every size,
-sampling, depth and layout:
+sampling, depth and layout, **on one thread** — the pooled numbers are in
+[what parallelism bought](#what-parallelism-bought) above, and the two are kept apart so this table
+stays comparable with the one it replaced:
 
 | case | before | after | after, Mpx/s |
 |---|---|---|---|

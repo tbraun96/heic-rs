@@ -77,8 +77,10 @@ fn grid_compose(c: &mut Criterion) {
 }
 
 /// Every size, sampling, depth and layout the colour step is expected to be
-/// fast at. Throughput is set to the pixel count, so criterion reports the
-/// figure the README quotes directly.
+/// fast at, on one thread. Throughput is set to the pixel count, so criterion
+/// reports the figure the README quotes directly. `color_threads` is where the
+/// same conversion is measured on the pool; keeping the two apart is what lets
+/// this group stay comparable with the numbers it replaced.
 fn color_convert(c: &mut Criterion) {
     let mut group = c.benchmark_group("color_convert");
     let nclx = heic_rs::Nclx::default();
@@ -101,7 +103,7 @@ fn color_convert(c: &mut Criterion) {
                                 nclx,
                                 layout,
                                 u64::MAX,
-                                None,
+                                Some(1),
                             )
                         })
                     });
@@ -122,7 +124,7 @@ fn color_convert(c: &mut Criterion) {
                     nclx,
                     PixelLayout::Rgb16,
                     u64::MAX,
-                    None,
+                    Some(1),
                 )
             })
         });
