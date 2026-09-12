@@ -96,12 +96,13 @@ let info = heic_rs::io::probe_file("photo.heic")?;
 let image = heic_rs::io::decode_file("photo.heic", &DecodeOptions::default())?;
 ```
 
-Runnable versions live in `examples/`: `decode.rs`, `probe.rs`, `to_png.rs`.
+Runnable versions live in `examples/`:
 
 ```
 cargo run --example probe -- photo.heic
 cargo run --example decode -- photo.heic
 cargo run --example to_png -- photo.heic out.png
+cargo run --release --example throughput -- path/to/a/directory/of/heics
 ```
 
 ## API tour
@@ -170,10 +171,11 @@ without a filesystem.
 | `std` | yes | the `io` module, and `std::error::Error` for `Error` |
 | `parallel` | yes | decodes grid tiles and converts colour on a `rayon` pool; implies `std` |
 
-`parallel` is the only dependency this crate has, it is MIT OR Apache-2.0 like everything under it,
-and it changes *when* a sample is computed rather than what it is: `tests/parallel.rs` asserts
-byte-identical output across thread counts and every pixel layout. Turn it off and the crate keeps
-working, one thread at a time, at the serial numbers above.
+`rayon`, which `parallel` pulls in, is the crate's only dependency; it and everything under it are
+MIT OR Apache-2.0. It changes *when* a sample is computed rather than what it is, and
+`tests/parallel.rs` asserts byte-identical output across thread counts and every pixel layout. Turn
+it off and the crate keeps working, one thread at a time, at the serial numbers
+[below](#what-parallelism-bought).
 
 ## `no_std` and wasm
 
