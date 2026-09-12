@@ -8,13 +8,14 @@
 //!
 //! # How it is arranged
 //!
-//! The matrix is integer, not floating point: [`fixed::Coeffs`] folds the
-//! sample scaling, the matrix and the output maximum into five `i32`
+//! The matrix is integer, not floating point: the private `fixed` module folds
+//! the sample scaling, the matrix and the output maximum into five `i32`
 //! coefficients, so a channel costs one multiply-accumulate, one rounded shift
 //! and one clamp. The chroma upsampler is fused into the walk: a conversion
 //! holds two upsampled chroma *rows*, never two chroma planes. The loops
-//! themselves live in [`kernel`], one compiled per pixel layout, and none of
-//! them branches on the layout or indexes a plane per sample.
+//! themselves live in the private `kernel` module, one compiled per pixel
+//! layout, and none of them branches on the layout or indexes a plane per
+//! sample.
 
 mod fixed;
 mod kernel;
