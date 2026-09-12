@@ -225,8 +225,9 @@ What we can measure today is the container half. The benches are criterion:
 cargo bench
 ```
 
-Three groups, all of which exercise code that is finished. Measured on an Apple M-series Mac,
-release build, criterion's median of a three-second measurement window:
+Three groups, all of which exercise code that is finished. **Machine: Apple M3 Max, macOS 27.0,
+64 GB, `rustc 1.98.0`, `--release`**, criterion's median of its default measurement window. Every
+number on this page was measured there; nothing is extrapolated.
 
 | group | case | median |
 |---|---|---|
@@ -236,21 +237,53 @@ release build, criterion's median of a three-second measurement window:
 | `grid_compose` | 2x2 tiles into 1024x1024 | 89.6 us |
 | `grid_compose` | 3x4 tiles into 2048x1536 | 348 us |
 | `grid_compose` | 6x8 tiles into 4032x3024 (the iPhone shape) | 2.71 ms |
-| `color_convert` | 512x512 to Rgb8 | 1.84 ms |
-| `color_convert` | 512x512 to Rgba8 | 1.94 ms |
-| `color_convert` | 2048x1536 to Rgb8 | 22.1 ms |
-| `color_convert` | 2048x1536 to Rgba8 | 23.3 ms |
 
 Reading the container is free: under two microseconds for a thirteen-item file, so probing a
 directory of photographs costs nothing. Compositing runs at about 4.5 gigapixels per second.
 
-**Colour conversion is the slow part and we are not going to pretend otherwise.** At 2048x1536 it
-takes 22 ms, about 140 megapixels per second, which is more than the AGPL crate spends decoding the
-entire file. Two reasons, both fixable and neither yet fixed: `upsample::plane` materialises two
-full-resolution chroma planes before the matrix runs, and the matrix itself is scalar `f32` with one
-bounds-checked index per sample. A fused per-pixel chroma fetch and an integer fixed-point matrix
-are the obvious next steps, and they are on the roadmap rather than in the code. The filter lives in
-one small module precisely so that it can be replaced without disturbing anything else.
+### Colour conversion
+
+The colour step was the slow part of this crate and is no longer. It used to materialise two
+full-resolution chroma planes and then run a scalar `f32` matrix with a bounds-checked index per
+sample; it now expands chroma one row at a time into a reused pair of row buffers and applies an
+integer fixed-point matrix through one loop per pixel layout. `color_convert` covers every size,
+sampling, depth and layout:
+
+| case | before | after | after, Mpx/s |
+|---|---|---|---|
+| 512x512 4:2:0 8-bit Rgb8 | 1.83 ms | **193 us** | 1361 |
+| 512x512 4:2:0 8-bit Rgba8 | 1.99 ms | **199 us** | 1316 |
+| 512x512 4:2:0 8-bit Gray8 | - | **37.9 us** | 6925 |
+| 512x512 4:4:4 8-bit Rgb8 | - | **175 us** | 1498 |
+| 512x512 4:2:0 10-bit Rgb8 | - | **193 us** | 1359 |
+| 2048x1536 4:2:0 8-bit Rgb8 | 21.97 ms | **2.240 ms** | 1405 |
+| 2048x1536 4:2:0 8-bit Rgba8 | 23.23 ms | **2.345 ms** | 1342 |
+| 2048x1536 4:2:0 8-bit Gray8 | - | **453 us** | 6938 |
+| 2048x1536 4:4:4 8-bit Rgb8 | - | **2.114 ms** | 1488 |
+| 2048x1536 4:2:0 10-bit Rgb8 | - | **2.273 ms** | 1384 |
+| 2048x1536 4:2:0 10-bit Rgb16 | 21.98 ms | **2.411 ms** | 1305 |
+| 4032x3024 4:2:0 8-bit Rgb8 | - | **8.622 ms** | 1414 |
+| 4032x3024 4:2:0 8-bit Rgba8 | - | **9.644 ms** | 1264 |
+| 4032x3024 4:2:0 8-bit Gray8 | - | **1.762 ms** | 6921 |
+| 4032x3024 4:4:4 8-bit Rgb8 | - | **8.322 ms** | 1465 |
+
+A dash means the case did not exist before; the four that did are the four the old table published.
+Nothing got slower. 2048x1536 to Rgb8 went from 22.0 ms to 2.24 ms, **9.8x**, from 143 megapixels
+per second to 1.41 gigapixels. The 2048x1536 shape is now 2.2 ms of the 8.54 ms an entire decode
+costs the AGPL alternative on this machine, rather than 2.6x that whole budget.
+
+**What is left.** The remaining cost is the interleaved narrow store. Grey output, which writes one
+byte per pixel, runs at 6.9 Gpx/s — five times the RGB rate — on exactly the same matrix, so the
+matrix is not what the RGB cases are waiting for; the three- and four-byte interleaved writes are.
+Removing that would mean hand-written NEON and SSE with `unsafe` (or `core::arch` intrinsics, which
+are `unsafe` to call), and `#![forbid(unsafe_code)]` is a promise this crate keeps. Portable SIMD
+would remove it safely, and is nightly-only today; when `std::simd` stabilises, the kernels in
+`src/color/kernel.rs` are where it goes.
+
+The conversion is fixed point, and says so: every channel is within **one least significant bit** of
+the same conversion in `f32`. `tests/color_fixed.rs` holds a float reference and asserts that bound
+over a randomised sweep of 600 combinations of depth, range, matrix, chroma sampling and layout,
+including odd widths and heights so the edge clamps are exercised.
 
 ## Correctness
 
@@ -300,12 +333,9 @@ Not supported, and reported as `Error::Unsupported` with a message naming the re
 1. Land the HEVC still-picture decoder as the `hevc` module, replacing the `Unsupported` seam in
    `decode()`.
 2. Publish end-to-end decode benchmarks for this crate, on the same corpus as the baseline above.
-3. Make colour conversion fast: fuse the chroma fetch into the matrix loop instead of
-   materialising two full-resolution planes, and move the matrix to integer fixed point. The
-   benchmark above says this is the crate's slowest finished code by a wide margin.
-4. Run the fuzz targets described in [SECURITY.md](SECURITY.md) and fix whatever they find.
-5. Alpha (`auxC`) decoding end to end, once the codec is in place.
-6. Consider `iovl` overlay derivation and 12-bit samples, in that order.
+3. Run the fuzz targets described in [SECURITY.md](SECURITY.md) and fix whatever they find.
+4. Alpha (`auxC`) decoding end to end, once the codec is in place.
+5. Consider `iovl` overlay derivation and 12-bit samples, in that order.
 
 Encoding is not on the roadmap.
 

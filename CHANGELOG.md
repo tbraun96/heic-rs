@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 still-picture decoder is not linked in, so `decode()` cannot yet produce pixels. There will be no
 release until it can. No release date is promised here because none has been set.
 
+### Changed
+
+- Colour conversion is now integer fixed point, and the chroma upsampler is fused into it: a
+  conversion expands chroma one row at a time into a reused pair of row buffers instead of
+  materialising two full-resolution planes, and applies the matrix through one bounds-check-free
+  loop per pixel layout. 2048x1536 to `Rgb8` went from 22.0 ms to 2.24 ms on an Apple M3 Max, 143
+  megapixels per second to 1.41 gigapixels. Output is within one least significant bit of the
+  previous floating-point result, a bound `tests/color_fixed.rs` asserts against a float reference.
+- `color::convert` refuses a frame whose `bit_depth` is outside 8 to 16 with `Error::Unsupported`,
+  rather than scaling by a shift it cannot represent.
+
 ### Added
 
 - ISOBMFF box reader: box walking, size and version/flags handling, 64-bit large sizes, and
