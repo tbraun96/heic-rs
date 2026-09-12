@@ -127,10 +127,11 @@ impl<'a> Context<'a> {
             if r.kind != RefKind::Cdsc || !r.to.contains(&item) {
                 continue;
             }
-            if let Some(i) = self.meta.item(r.from)
-                && &i.item_type == b"mime"
-                && metadata::is_xmp(i.content_type)
-            {
+            let is_xmp = self
+                .meta
+                .item(r.from)
+                .is_some_and(|i| &i.item_type == b"mime" && metadata::is_xmp(i.content_type));
+            if is_xmp {
                 return Some(r.from);
             }
         }
@@ -142,9 +143,7 @@ impl<'a> Context<'a> {
             if r.kind != RefKind::Cdsc || !r.to.contains(&item) {
                 continue;
             }
-            if let Some(i) = self.meta.item(r.from)
-                && &i.item_type == kind
-            {
+            if self.meta.item(r.from).is_some_and(|i| &i.item_type == kind) {
                 return Some(r.from);
             }
         }

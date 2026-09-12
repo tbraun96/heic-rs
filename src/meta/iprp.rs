@@ -81,9 +81,8 @@ impl<'a> Properties<'a> {
             if !a.essential {
                 continue;
             }
-            if let Some(b) = self.resolve(*a)
-                && !KNOWN.iter().any(|k| b.is(k))
-            {
+            let Some(b) = self.resolve(*a) else { continue };
+            if !KNOWN.iter().any(|k| b.is(k)) {
                 return Some(b.boxtype);
             }
         }

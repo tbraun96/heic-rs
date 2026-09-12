@@ -88,9 +88,7 @@ impl ItemProps<'_> {
 
     /// The luma bit depth, preferring `pixi` and falling back to `hvcC`.
     pub fn bit_depth(&self) -> Option<u8> {
-        if let Some(p) = &self.pixi
-            && let Some(first) = p.bits_per_channel.first()
-        {
+        if let Some(first) = self.pixi.as_ref().and_then(|p| p.bits_per_channel.first()) {
             return Some(*first);
         }
         self.hvcc.as_ref().map(|c| c.bit_depth_luma)

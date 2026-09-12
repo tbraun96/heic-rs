@@ -28,10 +28,7 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     let ctx = Context::open(bytes)?;
     let id = ctx.meta.primary;
     let p = ctx.props(id)?;
-    if options.strict
-        && let Some(code) = ctx.meta.props.unknown_essential(id)
-    {
-        let _ = code;
+    if options.strict && ctx.meta.props.unknown_essential(id).is_some() {
         return Err(Error::Unsupported(
             "the primary item carries an essential property this build does not implement",
         ));
