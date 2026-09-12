@@ -165,7 +165,7 @@ pub struct DecodeOptions {
     /// `Some(n)` builds a private pool of `n` threads for the call. Inside a
     /// pool of your own that is a *nested* pool, and the two will
     /// oversubscribe the machine; pass `None` there, or call
-    /// [`decode`](crate::decode) from outside your pool.
+    /// [`decode`](crate::decode()) from outside your pool.
     ///
     /// Without the `parallel` feature every value behaves like `Some(1)`. The
     /// pixels are identical in every case.
