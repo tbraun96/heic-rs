@@ -49,6 +49,10 @@
 //!
 //! - `std` (default): the [`io`] module, and `std::error::Error` for
 //!   [`Error`]. Turn it off for `no_std` and for wasm.
+//! - `parallel` (default): decode grid tiles and convert colour on a `rayon`
+//!   pool. Implies `std`, and is absent from the `no_std` and wasm builds.
+//!   The output is identical either way; see [`DecodeOptions::threads`] for
+//!   the knob and for what happens inside a caller's own pool.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -71,6 +75,7 @@ pub mod hevc;
 pub mod image;
 pub mod meta;
 pub mod metadata;
+mod parallel;
 pub mod probe;
 pub mod props;
 pub mod reader;

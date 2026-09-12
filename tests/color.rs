@@ -20,7 +20,7 @@ fn nclx(matrix: MatrixCoefficients, range: Range) -> Nclx {
 }
 
 fn convert(frame: &Frame, n: Nclx, layout: PixelLayout) -> Vec<u8> {
-    color::convert(frame, None, n, layout, u64::MAX)
+    color::convert(frame, None, n, layout, u64::MAX, None)
         .expect("converts")
         .data
 }
@@ -141,7 +141,7 @@ fn every_layout_has_the_size_and_order_it_promises() {
         (PixelLayout::Rgb16, 12),
         (PixelLayout::Rgba16, 16),
     ] {
-        let out = color::convert(&f, None, n, layout, u64::MAX).expect("converts");
+        let out = color::convert(&f, None, n, layout, u64::MAX, None).expect("converts");
         assert_eq!(out.data.len(), len, "{layout:?}");
         assert_eq!(out.data.len(), out.row_bytes() * out.height as usize);
     }
@@ -164,8 +164,8 @@ fn an_alpha_plane_is_carried_into_the_output() {
     let n = nclx(MatrixCoefficients::Bt709, Range::Full);
     let frame = solid_frame(2, 1, 255, 128, 128);
     let alpha = mono_frame(2, 1, |x, _| if x == 0 { 0 } else { 255 });
-    let out =
-        color::convert(&frame, Some(&alpha), n, PixelLayout::Rgba8, u64::MAX).expect("converts");
+    let out = color::convert(&frame, Some(&alpha), n, PixelLayout::Rgba8, u64::MAX, None)
+        .expect("converts");
     assert_eq!(out.data[3], 0);
     assert_eq!(out.data[7], 255);
 }
@@ -179,6 +179,7 @@ fn sixteen_bit_output_uses_the_full_range() {
         n,
         PixelLayout::Rgb16,
         u64::MAX,
+        None,
     )
     .expect("converts");
     let first = u16::from_ne_bytes([out.data[0], out.data[1]]);
@@ -236,7 +237,7 @@ fn upsampling_interpolates_between_chroma_samples() {
 fn conversion_respects_the_pixel_limit() {
     let n = nclx(MatrixCoefficients::Bt709, Range::Full);
     let f = solid_frame(4, 4, 128, 128, 128);
-    let e = color::convert(&f, None, n, PixelLayout::Rgb8, 8).expect_err("16 pixels over 8");
+    let e = color::convert(&f, None, n, PixelLayout::Rgb8, 8, None).expect_err("16 pixels over 8");
     assert_eq!(
         e,
         Error::PixelLimit {

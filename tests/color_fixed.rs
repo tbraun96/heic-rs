@@ -49,7 +49,7 @@ fn the_integer_matrix_stays_within_one_bit_of_the_float_one() {
                         range,
                     };
                     for layout in layouts {
-                        let got = color::convert(&frame, None, n, layout, u64::MAX)
+                        let got = color::convert(&frame, None, n, layout, u64::MAX, None)
                             .expect("converts")
                             .data;
                         let want = reference(&frame, n, layout);
@@ -111,7 +111,7 @@ fn a_known_rgb_image_survives_the_trip_through_ycbcr() {
         y_stride: w,
         c_stride: w,
     };
-    let out = color::convert(&frame, None, n, PixelLayout::Rgb8, u64::MAX).expect("converts");
+    let out = color::convert(&frame, None, n, PixelLayout::Rgb8, u64::MAX, None).expect("converts");
     let worst = out
         .data
         .iter()

@@ -25,6 +25,7 @@ use alloc::vec::Vec;
 use crate::error::{Error, Result};
 use crate::hevc::{ChromaFormat, Frame};
 use crate::image::{Image, PixelLayout, check_pixels};
+use crate::parallel;
 use crate::props::colr::Nclx;
 use fixed::{AlphaScale, Coeffs};
 use kernel::Mode;
@@ -53,6 +54,7 @@ pub fn convert(
     nclx: Nclx,
     layout: PixelLayout,
     max_pixels: u64,
+    threads: Option<usize>,
 ) -> Result<Image> {
     frame.validate()?;
     depth_ok(frame.bit_depth)?;
@@ -69,14 +71,7 @@ pub fn convert(
     } else {
         Mode::Matrix
     };
-    // Two chroma rows, reused for every output row. This is the whole of the
-    // upsampler's working set; there is no full-resolution chroma plane.
-    let mut scratch: Vec<u16> = if mode == Mode::Luma {
-        Vec::new()
-    } else {
-        alloc::vec![0u16; 2 * w as usize]
-    };
-    run(frame, &coeffs, mode, &mut scratch, &mut image);
+    run(frame, &coeffs, mode, &mut image, threads);
 
     if let Some(a) = alpha.filter(|_| layout.has_alpha()) {
         depth_ok(a.bit_depth)?;
@@ -104,15 +99,55 @@ fn depth_ok(depth: u8) -> Result<()> {
 
 /// Pick the loop for this layout. One instantiation per layout, chosen here
 /// and never re-examined inside a row.
-fn run(frame: &Frame, c: &Coeffs, mode: Mode, scratch: &mut [u16], image: &mut Image) {
+fn run(frame: &Frame, c: &Coeffs, mode: Mode, image: &mut Image, threads: Option<usize>) {
     let out = &mut image.data;
     match image.layout {
-        PixelLayout::Gray8 => kernel::planes::<1, false, false>(frame, c, mode, scratch, out),
-        PixelLayout::Rgb8 => kernel::planes::<3, false, false>(frame, c, mode, scratch, out),
-        PixelLayout::Bgr8 => kernel::planes::<3, true, false>(frame, c, mode, scratch, out),
-        PixelLayout::Rgba8 => kernel::planes::<4, false, false>(frame, c, mode, scratch, out),
-        PixelLayout::Bgra8 => kernel::planes::<4, true, false>(frame, c, mode, scratch, out),
-        PixelLayout::Rgb16 => kernel::planes::<6, false, true>(frame, c, mode, scratch, out),
-        PixelLayout::Rgba16 => kernel::planes::<8, false, true>(frame, c, mode, scratch, out),
+        PixelLayout::Gray8 => bands::<1, false, false>(frame, c, mode, out, threads),
+        PixelLayout::Rgb8 => bands::<3, false, false>(frame, c, mode, out, threads),
+        PixelLayout::Bgr8 => bands::<3, true, false>(frame, c, mode, out, threads),
+        PixelLayout::Rgba8 => bands::<4, false, false>(frame, c, mode, out, threads),
+        PixelLayout::Bgra8 => bands::<4, true, false>(frame, c, mode, out, threads),
+        PixelLayout::Rgb16 => bands::<6, false, true>(frame, c, mode, out, threads),
+        PixelLayout::Rgba16 => bands::<8, false, true>(frame, c, mode, out, threads),
     }
+}
+
+/// Rows per band handed to one thread.
+///
+/// Swept with `benches/decode.rs`'s `color_threads` group on an Apple M3 Max,
+/// converting 2048x1536 4:2:0 to RGB8. The pooled time rises monotonically
+/// with the band — 16 rows is the fastest measured, and 32, 64, 128 and 256
+/// are each slower than the one before — because a wide band both overflows
+/// L2 and leaves the pool too few pieces to balance its tail with. Below
+/// about twelve rows that reverses and per-band dispatch starts to cost more
+/// than the rows do, so the curve has a floor rather than a slope, and 16
+/// sits on it. Re-run that group before changing this.
+const ROWS_PER_BAND: usize = 16;
+
+/// Below this many pixels a conversion is over before a pool could be woken,
+/// so it is done on the calling thread whatever the caller asked for.
+/// 2048x1536 converts in about 2 ms serially; a quarter-megapixel image in
+/// about 170 us, which is still worth splitting, and a 512x512 one in 40 us,
+/// which is not.
+const PARALLEL_FLOOR_PIXELS: u64 = 256 * 1024;
+
+/// Convert the image in row bands, on as many threads as the caller allowed.
+///
+/// Each band gets its own pair of scratch chroma rows, since that scratch is
+/// the only mutable state a band carries between its rows.
+fn bands<const N: usize, const BGR: bool, const WIDE: bool>(
+    frame: &Frame,
+    c: &Coeffs,
+    mode: Mode,
+    out: &mut [u8],
+    threads: Option<usize>,
+) {
+    let w = frame.width as usize;
+    let scratch_len = if mode == Mode::Luma { 0 } else { 2 * w };
+    let small = u64::from(frame.width) * u64::from(frame.height) < PARALLEL_FLOOR_PIXELS;
+    let threads = if small { Some(1) } else { threads };
+    parallel::for_each_band(out, w * N, ROWS_PER_BAND, threads, |y0, dst| {
+        let mut scratch: Vec<u16> = alloc::vec![0u16; scratch_len];
+        kernel::planes::<N, BGR, WIDE>(frame, c, mode, &mut scratch, dst, y0);
+    });
 }

@@ -153,6 +153,23 @@ pub struct DecodeOptions {
     /// Refuse files that carry an essential property this crate cannot act on,
     /// rather than ignoring it.
     pub strict: bool,
+    /// How many threads to decode on.
+    ///
+    /// `None`, the default, uses `rayon`'s global pool — or, if the call is
+    /// already inside a `rayon` pool, that pool, which is what you want:
+    /// the work joins the pool you are in rather than competing with it.
+    ///
+    /// `Some(1)` runs the serial code itself, not a one-worker pool, so it is
+    /// exactly what a build without the `parallel` feature does.
+    ///
+    /// `Some(n)` builds a private pool of `n` threads for the call. Inside a
+    /// pool of your own that is a *nested* pool, and the two will
+    /// oversubscribe the machine; pass `None` there, or call
+    /// [`decode`](crate::decode) from outside your pool.
+    ///
+    /// Without the `parallel` feature every value behaves like `Some(1)`. The
+    /// pixels are identical in every case.
+    pub threads: Option<usize>,
 }
 
 impl Default for DecodeOptions {
@@ -163,6 +180,7 @@ impl Default for DecodeOptions {
             apply_transforms: true,
             decode_alpha: true,
             strict: false,
+            threads: None,
         }
     }
 }
@@ -204,6 +222,12 @@ impl DecodeOptions {
     /// not implement.
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.strict = strict;
+        self
+    }
+
+    /// Builder: choose the thread count. See [`DecodeOptions::threads`].
+    pub fn with_threads(mut self, threads: Option<usize>) -> Self {
+        self.threads = threads;
         self
     }
 }

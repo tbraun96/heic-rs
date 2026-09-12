@@ -20,18 +20,23 @@ pub(crate) enum Mode {
     Matrix,
 }
 
-/// Convert every row of `frame` into `out`.
+/// Convert a band of rows of `frame` into `out`.
 ///
 /// `N` is bytes per output pixel, `BGR` swaps red and blue, and `WIDE` selects
-/// 16-bit channels. `scratch` is two upsampled chroma rows' worth of `u16` and
-/// is reused for every row, which is what keeps a full-resolution chroma plane
-/// from ever existing.
+/// 16-bit channels. `out` holds the output rows starting at `y0`, and its
+/// length says how many there are. `scratch` is two upsampled chroma rows'
+/// worth of `u16` and is reused for every row in the band, which is what keeps
+/// a full-resolution chroma plane from ever existing.
+///
+/// A band depends on nothing but the source planes, so bands may be converted
+/// in any order or at the same time; `crate::parallel` is what decides.
 pub(crate) fn planes<const N: usize, const BGR: bool, const WIDE: bool>(
     frame: &Frame,
     c: &Coeffs,
     mode: Mode,
     scratch: &mut [u16],
     out: &mut [u8],
+    y0: usize,
 ) {
     let w = frame.width as usize;
     let (cw, ch) = frame.chroma.chroma_size(frame.width, frame.height);
@@ -39,10 +44,12 @@ pub(crate) fn planes<const N: usize, const BGR: bool, const WIDE: bool>(
     let (ys, cs) = (frame.y_stride as usize, frame.c_stride as usize);
     let x_shift = frame.chroma.x_shift();
     let (cb_row, cr_row) = scratch.split_at_mut(core::cmp::min(w, scratch.len() / 2));
-    for y in 0..frame.height as usize {
+    let rows = out.len().checked_div(w * N).unwrap_or(0);
+    for band_row in 0..rows {
+        let y = y0 + band_row;
         let (Some(luma), Some(dst)) = (
             frame.y.get(y * ys..y * ys + w),
-            out.get_mut(y * w * N..(y + 1) * w * N),
+            out.get_mut(band_row * w * N..(band_row + 1) * w * N),
         ) else {
             return;
         };

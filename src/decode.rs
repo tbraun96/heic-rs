@@ -5,14 +5,13 @@
 //! colour, applying transforms — in that order, and with the declared size
 //! checked against the caller's ceiling before any of it allocates.
 
-use alloc::vec::Vec;
-
 use crate::color;
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::grid;
 use crate::hevc::{self, Frame};
 use crate::image::{DecodeOptions, Image, check_pixels};
+use crate::parallel;
 use crate::props::ItemProps;
 use crate::props::colr::Nclx;
 use crate::transform;
@@ -42,10 +41,17 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     let (tw, th) = transform::transformed_size(cw, ch, &p.transforms)?;
     check_pixels(tw, th, limit)?;
 
-    let frame = decode_item(&ctx, id, limit)?;
+    let frame = decode_item(&ctx, id, limit, options.threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit)?;
     let nclx = p.nclx.unwrap_or_default();
-    let image = color::convert(&frame, alpha.as_ref(), nclx, options.layout, limit)?;
+    let image = color::convert(
+        &frame,
+        alpha.as_ref(),
+        nclx,
+        options.layout,
+        limit,
+        options.threads,
+    )?;
     if options.apply_transforms {
         transform::apply_all(image, &p.transforms)
     } else {
@@ -54,13 +60,16 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
 }
 
 /// Decode one item, following a `grid` derivation when there is one.
-fn decode_item(ctx: &Context<'_>, id: u32, limit: u64) -> Result<Frame> {
+///
+/// A grid's tiles are independent coded pictures: nothing in one tile's
+/// bitstream refers to another, so they are decoded together when the caller
+/// allows it. The order of `frames` is the `dimg` order, which is what
+/// [`grid::compose`] places them by, so the result does not depend on the
+/// order they happened to finish in.
+fn decode_item(ctx: &Context<'_>, id: u32, limit: u64, threads: Option<usize>) -> Result<Frame> {
     match ctx.grid(id)? {
         Some((g, tiles)) => {
-            let mut frames = Vec::with_capacity(tiles.len());
-            for t in &tiles {
-                frames.push(decode_coded(ctx, *t)?);
-            }
+            let frames = parallel::try_map(&tiles, threads, |t| decode_coded(ctx, *t))?;
             grid::compose(&g, &frames, limit)
         }
         None => decode_coded(ctx, id),
@@ -96,7 +105,7 @@ fn alpha_frame(
     let Some(aux) = ctx.alpha_item(id)? else {
         return Ok(None);
     };
-    Ok(Some(decode_item(ctx, aux, limit)?))
+    Ok(Some(decode_item(ctx, aux, limit, options.threads)?))
 }
 
 /// The colour description that will be used for an item, including the

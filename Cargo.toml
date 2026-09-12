@@ -18,12 +18,16 @@ name = "heic_rs"
 path = "src/lib.rs"
 
 [features]
-default = ["std"]
+default = ["std", "parallel"]
 std = []
+# Decode grid tiles and convert colour on a thread pool. std-only: the no_std
+# and wasm builds have nowhere to put the threads, and must not see rayon.
+parallel = ["std", "dep:rayon"]
 # Exposes the decoder's internal stages to `benches/`. Not public API.
 bench = []
 
 [dependencies]
+rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
@@ -31,6 +35,11 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 [[bench]]
 name = "decode"
 harness = false
+
+[[bench]]
+name = "hevc"
+harness = false
+required-features = ["bench"]
 
 [[example]]
 name = "decode"
@@ -42,6 +51,10 @@ required-features = ["std"]
 
 [[example]]
 name = "to_png"
+required-features = ["std"]
+
+[[example]]
+name = "throughput"
 required-features = ["std"]
 
 [package.metadata.docs.rs]
