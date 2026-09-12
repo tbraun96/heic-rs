@@ -99,9 +99,38 @@ fn bilinear(dst: &mut [u16], src0: &[u16], src1: &[u16], w0: u32) -> usize {
     body * 2
 }
 
+/// Expand one chroma row horizontally only, one sample per output column.
+///
+/// This is the horizontal half of [`row`]: `row` is exactly [`vblend`]
+/// applied, column by column, to `horizontal` of each of its two source rows.
+/// [`crate::color`] uses it to expand each chroma row once and blend
+/// vertically inside its own loop, rather than expanding every chroma row
+/// twice — once for each luma row it feeds.
+pub fn horizontal(dst: &mut [u16], src: &[u16], x_shift: u32) {
+    let n = src.len();
+    if n == 0 || dst.is_empty() {
+        return;
+    }
+    let done = if x_shift == 0 {
+        let m = core::cmp::min(dst.len(), n);
+        dst[..m].copy_from_slice(&src[..m]);
+        m
+    } else {
+        let body = core::cmp::min(n - 1, dst.len() / 2);
+        for (i, px) in dst.chunks_exact_mut(2).take(body).enumerate() {
+            px[0] = src[i];
+            px[1] = havg(src[i], src[i + 1]);
+        }
+        body * 2
+    };
+    for d in &mut dst[done..] {
+        *d = src[n - 1];
+    }
+}
+
 /// Blend two vertically adjacent samples, `w0` parts of four from the first.
 #[inline(always)]
-fn vblend(a: u16, b: u16, w0: u32) -> u16 {
+pub fn vblend(a: u16, b: u16, w0: u32) -> u16 {
     ((u32::from(a) * w0 + u32::from(b) * (4 - w0) + 2) >> 2) as u16
 }
 

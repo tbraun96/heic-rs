@@ -5,12 +5,15 @@
 //! 8 columns by 6 rows of 512x512 tiles; the last column and row overhang the
 //! declared output size and are cropped away here.
 
+mod mosaic;
+
 use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
-use crate::hevc::{ChromaFormat, Frame};
+use crate::hevc::Frame;
 use crate::image::check_pixels;
 use crate::reader::Reader;
+pub use mosaic::Mosaic;
 
 /// The parsed payload of a `grid` item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,120 +81,46 @@ pub fn check_tiles(grid: &Grid, tiles: &[u32]) -> Result<()> {
 ///
 /// Tiles are laid out row-major in the order the `dimg` reference listed them,
 /// which is the order the caller must pass them in.
+///
+/// This is [`Mosaic`] run over every row into a fresh frame. The decoder's
+/// own colour pass reads a mosaic's rows directly and never calls this; it is
+/// here for the alpha plane, and for any caller that wants the planes.
 pub fn compose(grid: &Grid, tiles: &[Frame], max_pixels: u64) -> Result<Frame> {
-    if tiles.len() as u64 != grid.tile_count() {
-        return Err(Error::Malformed(
-            "the grid's tile count disagrees with the number of decoded tiles",
-        ));
+    let mosaic = Mosaic::new(grid, tiles)?;
+    check_pixels(mosaic.width(), mosaic.height(), max_pixels)?;
+    let (w, h) = (mosaic.width() as usize, mosaic.height() as usize);
+    let (cw, ch) = mosaic.chroma_size();
+    let (cw, ch) = (cw as usize, ch as usize);
+    // `Mosaic::new` has checked every tile, so a row it cannot supply is a
+    // contradiction; it is still reported rather than left as zeros.
+    fn short() -> Error {
+        Error::Malformed("grid tile is shorter than the row it must supply")
     }
-    let first = tiles.first().ok_or(Error::Malformed("grid has no tiles"))?;
-    first.validate()?;
-    let (tw, th) = (first.width, first.height);
-    let (chroma, depth) = (first.chroma, first.bit_depth);
-    for t in tiles {
-        t.validate()?;
-        if t.width != tw || t.height != th {
-            return Err(Error::Malformed("grid tiles are not all the same size"));
-        }
-        if t.chroma != chroma || t.bit_depth != depth {
-            return Err(Error::Malformed("grid tiles do not share a pixel format"));
-        }
+    let mut y = alloc::vec![0u16; w * h];
+    for (r, row) in y.chunks_exact_mut(w).enumerate() {
+        mosaic.luma_row(r, row).ok_or_else(short)?;
     }
-    // The mosaic must be at least as large as the crop it promises.
-    let canvas_w = u64::from(tw) * u64::from(grid.columns);
-    let canvas_h = u64::from(th) * u64::from(grid.rows);
-    if canvas_w < u64::from(grid.output_width) || canvas_h < u64::from(grid.output_height) {
-        return Err(Error::Malformed(
-            "grid tiles do not cover the declared output size",
-        ));
-    }
-    check_pixels(grid.output_width, grid.output_height, max_pixels)?;
-
-    let (out_cw, out_ch) = chroma.chroma_size(grid.output_width, grid.output_height);
-    let mut out = Frame {
-        width: grid.output_width,
-        height: grid.output_height,
-        bit_depth: depth,
-        chroma,
-        y: alloc::vec![0u16; grid.output_width as usize * grid.output_height as usize],
-        cb: alloc::vec![0u16; out_cw as usize * out_ch as usize],
-        cr: alloc::vec![0u16; out_cw as usize * out_ch as usize],
-        y_stride: grid.output_width,
-        c_stride: out_cw,
-    };
-    let (xs, ys) = (chroma.x_shift(), chroma.y_shift());
-    for (i, tile) in tiles.iter().enumerate() {
-        let row = i as u32 / grid.columns;
-        let col = i as u32 % grid.columns;
-        let (dx, dy) = (col * tw, row * th);
-        blit(
-            &mut out.y,
-            out.y_stride,
-            grid.output_width,
-            grid.output_height,
-            &tile.y,
-            tile.y_stride,
-            tw,
-            th,
-            dx,
-            dy,
-        );
-        if chroma == ChromaFormat::Monochrome {
-            continue;
+    let mut cb = alloc::vec![0u16; cw * ch];
+    let mut cr = alloc::vec![0u16; cw * ch];
+    if cw > 0 {
+        for (r, row) in cb.chunks_exact_mut(cw).enumerate() {
+            mosaic.chroma_row(false, r, row).ok_or_else(short)?;
         }
-        // Tiles must start on a chroma sample or the mosaic cannot be
-        // reassembled without resampling, which would be a silent quality loss.
-        if (dx >> xs) << xs != dx || (dy >> ys) << ys != dy {
-            return Err(Error::Unsupported(
-                "grid tile origin is not on a chroma sample",
-            ));
-        }
-        let (tcw, tch) = chroma.chroma_size(tw, th);
-        for (plane, src) in [(&mut out.cb, &tile.cb), (&mut out.cr, &tile.cr)] {
-            blit(
-                plane,
-                out.c_stride,
-                out_cw,
-                out_ch,
-                src,
-                tile.c_stride,
-                tcw,
-                tch,
-                dx >> xs,
-                dy >> ys,
-            );
+        for (r, row) in cr.chunks_exact_mut(cw).enumerate() {
+            mosaic.chroma_row(true, r, row).ok_or_else(short)?;
         }
     }
-    Ok(out)
-}
-
-/// Copy a rectangle into a plane, clipping anything that overhangs.
-#[allow(clippy::too_many_arguments)]
-fn blit(
-    dst: &mut [u16],
-    dst_stride: u32,
-    dst_w: u32,
-    dst_h: u32,
-    src: &[u16],
-    src_stride: u32,
-    src_w: u32,
-    src_h: u32,
-    dx: u32,
-    dy: u32,
-) {
-    if dx >= dst_w || dy >= dst_h {
-        return;
-    }
-    let copy_w = core::cmp::min(src_w, dst_w - dx) as usize;
-    let copy_h = core::cmp::min(src_h, dst_h - dy) as usize;
-    for row in 0..copy_h {
-        let s = row * src_stride as usize;
-        let d = (dy as usize + row) * dst_stride as usize + dx as usize;
-        let (Some(srow), Some(drow)) = (src.get(s..s + copy_w), dst.get_mut(d..d + copy_w)) else {
-            return;
-        };
-        drow.copy_from_slice(srow);
-    }
+    Ok(Frame {
+        width: mosaic.width(),
+        height: mosaic.height(),
+        bit_depth: mosaic.bit_depth(),
+        chroma: mosaic.chroma(),
+        y,
+        cb,
+        cr,
+        y_stride: mosaic.width(),
+        c_stride: cw as u32,
+    })
 }
 
 /// Collect the tile item ids a grid derives from, in order.
