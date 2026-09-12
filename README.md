@@ -374,10 +374,16 @@ on RGB and on BT.601 luma, because luma is the half that no upsampling choice ca
 | `rgb-strips-96.heic` | saturated bars | 49.1 dB RGB / 57.6 dB luma | >= 45 / >= 55 dB |
 | `gradient-512.heic` | single tile, smooth | 47.8 dB RGB / 60.0 dB luma | >= 45 / >= 55 dB |
 | `photo-2048.heic` | 4x3 grid, photographic | 48.2 dB RGB / 59.9 dB luma | >= 45 / >= 55 dB |
+| `rotated-90.heic` | the same, with an `irot` | 48.2 dB RGB / 60.0 dB luma | >= 45 / >= 55 dB |
+| `with-exif.heic` | the same, with an EXIF item | 48.2 dB RGB / 59.9 dB luma | >= 45 / >= 55 dB |
 
 The floors sit three to five decibels under what is measured, which is the width of a rounding-tie
 disagreement. A wrong coefficient, a wrong prediction mode or a mis-sited chroma plane costs tens of
 decibels, not three, so these thresholds catch a regression rather than merely recording one.
+
+`rotated-90.heic` is compared against the platform decoder's *rotated* output, so it fails if `irot`
+is skipped or applied out of order rather than only if it is applied wrongly. That is every fixture
+in the corpus; none is left out of the gate.
 
 Comparing against the OS decoder is deliberate. Differential-testing against another implementation
 means inheriting that implementation's bugs as "expected" output, and in this case it would also mean
@@ -430,6 +436,10 @@ Licensed under either of
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
 
 at your option.
+
+The HEVC decoder is an independent implementation written from the published specification text. No
+code was taken from any GPL, LGPL or AGPL decoder; [NOTICE](NOTICE) records what was consulted and
+for what. Note that this licence grants no patent rights in the HEVC standard itself.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this
 crate by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any

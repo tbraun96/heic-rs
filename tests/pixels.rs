@@ -45,21 +45,21 @@ const CORPUS: [&str; 9] = [
     "with-exif.heic",
 ];
 
-/// What one fixture is expected to achieve, and why.
+/// What one fixture is expected to achieve: an identical buffer, or floors on
+/// RGB PSNR (which includes chroma upsampling) and on luma PSNR (which does
+/// not).
 struct Bar {
     name: &'static str,
-    /// Demand an identical buffer, not a PSNR.
     exact: bool,
-    /// Floor on RGB PSNR, which includes chroma upsampling.
     rgb_db: f64,
-    /// Floor on luma PSNR, which does not.
     luma_db: f64,
 }
 
-/// `exact` is claimed exactly where the fixture's chroma is constant, so that
-/// the upsampler has no freedom to exercise. Everything else measures 47.8 to
-/// 49.8 dB RGB and 57.6 to 60.0 dB luma today; the floors are set below that
-/// by the width of a rounding disagreement.
+/// Every fixture in the corpus, in the order they grow. `exact` is claimed
+/// exactly where the fixture's chroma is constant, so that the upsampler has
+/// no freedom to exercise. Everything else measures 47.8 to 49.8 dB RGB and
+/// 57.6 to 60.0 dB luma today; the floors are set below that by the width of
+/// a rounding disagreement.
 const BARS: &[Bar] = &[
     // Solid white: no chroma detail, no residual, nothing to disagree about.
     Bar {
@@ -109,6 +109,22 @@ const BARS: &[Bar] = &[
     // A 4x3 grid of 512x512 tiles of photographic content: the whole chain.
     Bar {
         name: "photo-2048.heic",
+        exact: false,
+        rgb_db: 45.0,
+        luma_db: 55.0,
+    },
+    // The same content carrying an `irot`. The reference is the platform
+    // decoder's *rotated* output, so this fails if the transform is skipped
+    // or applied out of order, not only if it is applied wrongly.
+    Bar {
+        name: "rotated-90.heic",
+        exact: false,
+        rgb_db: 45.0,
+        luma_db: 55.0,
+    },
+    // The same content with an EXIF item, which must not move a pixel.
+    Bar {
+        name: "with-exif.heic",
         exact: false,
         rgb_db: 45.0,
         luma_db: 55.0,
