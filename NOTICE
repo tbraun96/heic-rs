@@ -11,3 +11,9 @@ copied:
   * scuffle-h265 (MIT OR Apache-2.0)  NAL and parameter set header parsing
 
 This crate does not grant any patent licence to the HEVC standard itself.
+
+The brand assets under assets/ are CertifiedCopy's (https://certified.sh), used
+here by its own authors; the mark is not licensed for other people's use.
+assets/fonts/ holds three IBM Plex web fonts, used only to render the social
+preview image; IBM Plex is licensed under the SIL Open Font License 1.1, whose
+text is beside them in assets/fonts/LICENSE-IBM-Plex.txt.

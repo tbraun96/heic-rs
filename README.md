@@ -1,11 +1,87 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/mark-ondark.svg">
+  <img src="assets/mark.svg" alt="CertifiedCopy" height="72">
+</picture>
+
 # heic-rs
 
-A pure-Rust HEIC/HEIF image decoder: no C toolchain, no `unsafe`, `no_std`-friendly, wasm-ready.
+**The pure-Rust HEIC / HEIF image decoder.**
 
-[![crates.io](https://img.shields.io/crates/v/heic-rs.svg)](https://crates.io/crates/heic-rs)
-[![docs.rs](https://img.shields.io/docsrs/heic-rs)](https://docs.rs/heic-rs)
-[![CI](https://github.com/tbraun96/heic-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/tbraun96/heic-rs/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+No C toolchain. No `unsafe`. `no_std`-friendly, wasm-ready, MIT OR Apache-2.0 —
+and **2.71× faster** than the AGPL alternative on a real photograph.
+
+[![crates.io](https://img.shields.io/crates/v/heic-rs.svg?style=flat-square&color=12B981)](https://crates.io/crates/heic-rs)
+[![docs.rs](https://img.shields.io/docsrs/heic-rs?style=flat-square)](https://docs.rs/heic-rs)
+[![CI](https://img.shields.io/github/actions/workflow/status/tbraun96/heic-rs/ci.yml?style=flat-square&label=CI)](https://github.com/tbraun96/heic-rs/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg?style=flat-square)](#license)
+[![unsafe](https://img.shields.io/badge/unsafe-forbidden-12B981.svg?style=flat-square)](#why-pure-rust)
+[![no_std](https://img.shields.io/badge/no__std-%2B%20alloc-6E6880.svg?style=flat-square)](#no_std-and-wasm)
+
+[**certified.sh**](https://certified.sh) &nbsp;·&nbsp;
+[Docs](https://docs.rs/heic-rs) &nbsp;·&nbsp;
+[Benchmarks](#performance) &nbsp;·&nbsp;
+[FAQ](#questions-people-ask) &nbsp;·&nbsp;
+[Avarok](https://avarok.net)
+
+</div>
+
+---
+
+**What it is.** `heic-rs` reads the HEIC and HEIF files an iPhone or a Mac produces — the ISOBMFF
+container, the HEVC still-picture bitstream inside it, the grid of tiles a photograph is stored as,
+the rotation and the colour — and gives you RGB, RGBA, BGR, grey or 16-bit pixels. All of it is
+Rust. There is no `libheif`, no `libde265`, no `cmake`, no `build.rs` that shells out, and no
+`unsafe` block anywhere in the chain.
+
+**Why it exists.** Decoding HEIC in Rust used to mean one of two things: bind to the C library
+`libheif` and inherit both a C toolchain and, in practice, GPL-encumbered codec plugins; or use the
+one pure-Rust decoder there was, which is AGPL-3.0. Neither is available to a permissively licensed
+project. `heic-rs` is the third option — the ordinary Rust dual licence, MIT OR Apache-2.0, with
+nothing copyleft flowing into your binary — and it turned out not to cost any speed.
+
+It was written for [**CertifiedCopy**](https://certified.sh), which makes a court-ready copy of a
+phone and has to show the photographs on it in a browser, and is released on its own because it is
+useful on its own. See [who builds this](#who-builds-this).
+
+```toml
+[dependencies]
+heic-rs = "0.1"
+```
+
+## Performance at a glance
+
+Measured on an Apple M3 Max against `heic` 0.1.6, the AGPL-3.0 decoder, on the same corpus with the
+same harness. Whole file in, RGB8 out. The [full method, the tables and the case we lose](#performance)
+are below; nothing here is extrapolated.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-decode-dark.svg">
+  <img src="assets/bench-decode.svg" alt="Decode time against the AGPL heic crate: flat-64 0.030 ms against 0.023 ms (1.30x slower), gradient-512 2.07 against 2.30 ms (1.11x faster), checker-1024 3.35 against 5.04 ms (1.50x faster), photo-2048 2.87 against 7.78 ms (2.71x faster)" width="100%">
+</picture>
+
+A photograph is not one coded picture; it is a grid of 512×512 tiles, and the tiles are independent.
+`photo-2048.heic` is twelve of them, and decoding twelve at once is where the 2.71× comes from:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-parallel-dark.svg">
+  <img src="assets/bench-parallel.svg" alt="Thread pool speed-up: one tile 1.0x, four tiles 3.6x, twelve tiles 8.3x" width="100%">
+</picture>
+
+Colour conversion used to be the slow part of this crate and is no longer. Chroma now expands one
+row at a time into a reused pair of buffers and the matrix is integer fixed point, within one
+least significant bit of the `f32` reference:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/bench-color-dark.svg">
+  <img src="assets/bench-color.svg" alt="Colour conversion before and after the fused fixed-point rewrite: 2048x1536 to RGB8 went from 21.97 ms to 2.24 ms, 9.8x" width="100%">
+</picture>
+
+Every number on this page comes from [`benches/results.json`](benches/results.json), and
+[`scripts/bench-graph.py`](scripts/bench-graph.py) draws these charts from it and fails if the
+tables below stop agreeing with it. A chart that disagrees with its own table is worse than no
+chart.
 
 ## Status
 
@@ -208,6 +284,9 @@ hostile input; set it to `None` only when you control the files.
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Performance
+
+The charts [at the top of this page](#performance-at-a-glance) are drawn from the tables in this
+section, by the script that also checks the two still agree.
 
 ### Against the AGPL alternative
 
@@ -420,6 +499,80 @@ Not supported, and reported as `Error::Unsupported` with a message naming the re
 - Encoding. This is a decoder.
 - Inter prediction, P and B slices, and multi-picture sequences: this decodes still pictures.
 - Dependent slice segments, and the multilayer, 3D, screen-content and range extensions.
+
+## Questions people ask
+
+**Is there a pure-Rust HEIC decoder?** Yes — this one. `heic-rs` implements the ISOBMFF/HEIF
+container and the HEVC still-picture decoder itself, in Rust, with `#![forbid(unsafe_code)]` at the
+crate root. There is one other pure-Rust decoder, `heic` by imazen, and it is AGPL-3.0; everything
+else is a binding to the C library `libheif`.
+
+**Can I decode HEIC in WebAssembly?** Yes. The core is `no_std` + `alloc`, and
+`cargo check --target wasm32-unknown-unknown --no-default-features` runs in CI on every push.
+Turn default features off in the browser: there are no threads there and rayon must not be
+compiled in.
+
+**Does it need libheif, libde265, or a C compiler?** No. `cargo build` is the whole story. With
+default features off the crate has zero dependencies; with them on it has exactly one, `rayon`.
+
+**Can I use it in a closed-source product?** Yes. MIT OR Apache-2.0, the ordinary Rust dual licence,
+with no copyleft obligation flowing into your binary. That is the reason this crate was written.
+Note that the licence grants no patent rights in the HEVC standard itself — that question is about
+the codec, not about this code, and it is the same question for every HEVC decoder.
+
+**How fast is it?** On an Apple M3 Max, a 2048×1536 photograph decodes whole-file to RGB8 in
+**2.87 ms** — 1.1 gigapixels a second — against 7.78 ms for the AGPL crate. On a single small
+low-residual image it is about a third *slower* than that crate; both numbers are in
+[the table](#against-the-agpl-alternative), and closing the gap is the first
+[roadmap](#roadmap) item.
+
+**Does it decode iPhone photos?** Yes, and this is not a given. Above 512 px on a side, HEIC
+photographs are stored as a `grid` derivation of 512×512 tiles — 4032×3024, the common iPhone shape,
+arrives as 8 columns by 6 rows. A decoder that handles only single-item images fails on almost every
+real photograph. `heic-rs` composes grids, and that is also where its speed comes from.
+
+**Does it decode AVIF?** No. AVIF is AV1 in the same container family; the error names it
+explicitly rather than producing wrong pixels. Use [`avif-decode`](https://crates.io/crates/avif-decode)
+or [`image`](https://crates.io/crates/image) for that.
+
+**Does it encode HEIC?** No, and encoding is not on the roadmap. This is a decoder.
+
+**Is the output identical to Apple's?** Where the chroma is constant — a solid colour, an achromatic
+checkerboard — yes, bit for bit, including a 2×2 grid. Everywhere else it is within a rounding-tie
+of Apple's decoder and the tests assert a floor on it: ≥45 dB RGB and ≥55 dB luma, measured at 48
+and 60. See [correctness](#correctness).
+
+**10-bit? 4:2:2? Monochrome?** All three, plus 4:2:0 and 4:4:4. Main, Main 10 and Main Still
+Picture profiles.
+
+**Is it safe to point at a file from the internet?** That is what it is built for — see
+[security](#security). The crate is `#![forbid(unsafe_code)]`, library code contains no
+`unwrap`/`expect`/`panic!`, and `DecodeOptions::max_pixels` caps the allocation before it happens.
+
+## Who builds this
+
+`heic-rs` is a crate of [**CertifiedCopy**](https://certified.sh), released on its own.
+
+<a href="https://certified.sh">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/mark-ondark.svg">
+    <img src="assets/mark.svg" alt="CertifiedCopy" height="56">
+  </picture>
+</a>
+
+**[CertifiedCopy](https://certified.sh)** makes a court-ready copy of a phone — messages, photos,
+call history — on your own machine, with nothing uploaded anywhere, and certifies that the copy
+matches what the phone said. It has to show an iPhone's photographs in a browser, and browsers other
+than Safari do not decode HEIC. That is the problem this crate exists to solve.
+[certified.sh](https://certified.sh) · [the repository](https://github.com/Avarok-Cybersecurity/certified)
+
+It is a project of **[Avarok](https://avarok.net)** ([GitHub](https://github.com/Avarok-Cybersecurity)),
+which builds security and forensics tooling in Rust. The same rule produced its sibling crate,
+[**`rsadb`**](https://github.com/tbraun96/rsadb) — the Android Debug Bridge protocol in pure Rust,
+no `adb` binary, no C, MIT OR Apache-2.0 — for the same reason: a permissive licence and no
+toolchain to install should not be a thing you have to give up.
+
+If `heic-rs` is useful to you, a star on the repository is how other people find it.
 
 ## Roadmap
 

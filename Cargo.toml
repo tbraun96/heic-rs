@@ -11,7 +11,16 @@ documentation = "https://docs.rs/heic-rs"
 readme = "README.md"
 keywords = ["heic", "heif", "image", "decoder", "hevc"]
 categories = ["multimedia::images", "encoding", "no-std", "wasm"]
-exclude = ["tests/fixtures/*.heic", "tests/fixtures/*.png", ".github/*"]
+exclude = [
+    "tests/fixtures/*.heic",
+    "tests/fixtures/*.png",
+    ".github/*",
+    # The README's charts ship (crates.io resolves relative links against the repository,
+    # but a vendored copy should still be able to draw them). What it makes them from does not.
+    "assets/fonts/*",
+    "assets/og-image.png",
+    "assets/og-image.html",
+]
 
 [lib]
 name = "heic_rs"

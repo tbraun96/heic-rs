@@ -1,0 +1,26 @@
+{
+  "_comment": "Every performance number the README shows, measured once and written here once. scripts/bench-graph.py draws the charts from this file and checks the README's tables against it, so a chart and a table cannot drift apart. Re-measure with `cargo run --release --example throughput` and `cargo bench`, update here, then run `python3 scripts/bench-graph.py --write --check-readme`.",
+  "machine": "Apple M3 Max (12P/4E), macOS 27.0, 64 GB, rustc 1.98.0, --release, rayon default pool of 16",
+  "baseline": "heic 0.1.6 (imazen, AGPL-3.0) with std + parallel",
+  "method": "Whole file in, RGB8 out. One warm-up discarded, best of nine, decoders run alternately, the cycle repeated five times, lowest reported.",
+  "decode": [
+    {"file": "flat-64.heic",      "pixels": "64x64",     "mpx": 0.004096, "ours_ms": 0.030, "theirs_ms": 0.023},
+    {"file": "gradient-512.heic", "pixels": "512x512",   "mpx": 0.262144, "ours_ms": 2.07,  "theirs_ms": 2.30},
+    {"file": "checker-1024.heic", "pixels": "1024x1024", "mpx": 1.048576, "ours_ms": 3.35,  "theirs_ms": 5.04},
+    {"file": "photo-2048.heic",   "pixels": "2048x1536", "mpx": 3.145728, "ours_ms": 2.87,  "theirs_ms": 7.78}
+  ],
+  "parallel": [
+    {"file": "flat-64.heic",      "tiles": 1,  "serial_ms": 0.030, "pooled_ms": 0.030},
+    {"file": "gradient-512.heic", "tiles": 1,  "serial_ms": 2.04,  "pooled_ms": 2.07},
+    {"file": "checker-1024.heic", "tiles": 4,  "serial_ms": 12.06, "pooled_ms": 3.35},
+    {"file": "photo-2048.heic",   "tiles": 12, "serial_ms": 23.80, "pooled_ms": 2.87}
+  ],
+  "color": [
+    {"case": "512x512 4:2:0 Rgb8",   "before_ms": 1.83,  "after_ms": 0.193},
+    {"case": "512x512 4:2:0 Rgba8",  "before_ms": 1.99,  "after_ms": 0.199},
+    {"case": "512x512 4:2:0 Rgb16",  "before_ms": 1.84,  "after_ms": 0.198},
+    {"case": "2048x1536 4:2:0 Rgb8", "before_ms": 21.97, "after_ms": 2.240},
+    {"case": "2048x1536 4:2:0 Rgba8","before_ms": 23.23, "after_ms": 2.345},
+    {"case": "2048x1536 4:2:0 Rgb16","before_ms": 21.98, "after_ms": 2.381}
+  ]
+}

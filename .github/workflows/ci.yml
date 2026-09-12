@@ -115,6 +115,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
+  charts:
+    name: charts match benches/results.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Redraw the README's charts and check the tables against the same numbers
+        run: |
+          python3 scripts/bench-graph.py --write --check-readme
+          git add -A -- assets
+          git diff --cached --exit-code -- assets \
+            || { echo "::error::assets/*.svg are stale; run scripts/bench-graph.py --write"; exit 1; }
+
   publish-dry-run:
     name: publish dry run
     runs-on: ubuntu-latest
