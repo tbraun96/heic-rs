@@ -10,6 +10,22 @@ use super::Cabac;
 use super::ctx::{INIT_VALUES, NUM_CTX};
 use super::encoder::Enc;
 use super::tables::{RANGE_TAB_LPS, TRANS_IDX_LPS, TRANS_IDX_MPS};
+use crate::hevc::error::Error;
+
+#[test]
+fn running_past_the_end_is_reported_by_the_next_terminate_bin() {
+    let mut dec = Cabac::new(&[0u8; 4], 0, 26).expect("decoder init");
+    // Sixty-four bypass bins shift in eight bytes: within the overread slack.
+    for _ in 0..64 {
+        dec.bypass();
+    }
+    assert_eq!(dec.terminate(), Ok(0));
+    // Two hundred more run well past it; the bins themselves never fail.
+    for _ in 0..200 {
+        dec.bypass();
+    }
+    assert_eq!(dec.terminate(), Err(Error::Truncated));
+}
 
 /// One bin of a test sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
