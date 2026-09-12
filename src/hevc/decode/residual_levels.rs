@@ -38,7 +38,7 @@ pub fn decode_levels(
             continue;
         }
         if num_gt1 < 8 {
-            let bin = d.cab.decision(base + (*c1).min(3) as usize)? != 0;
+            let bin = d.cab.decision(base + (*c1).min(3) as usize) != 0;
             gt1[m] = bin;
             num_gt1 += 1;
             if bin {
@@ -58,12 +58,12 @@ pub fn decode_levels(
     let sign_hidden = last_sig - first_sig > 3 && !d.tq_bypass;
     if last_gt1 >= 0 {
         let ctx = off::GT2 + ctx_set + if c_idx > 0 { 4 } else { 0 };
-        gt2[last_gt1 as usize] = d.cab.decision(ctx)? != 0;
+        gt2[last_gt1 as usize] = d.cab.decision(ctx) != 0;
     }
     let mut signs = [false; 16];
     for m in (0..16).rev() {
         if sig[m] && !(d.pps.sign_data_hiding && sign_hidden && m as i32 == first_sig) {
-            signs[m] = d.cab.bypass()? != 0;
+            signs[m] = d.cab.bypass() != 0;
         }
     }
     let mut rice = if d.sps.persistent_rice {

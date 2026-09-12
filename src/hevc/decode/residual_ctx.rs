@@ -39,7 +39,7 @@ pub fn last_position(d: &mut Dec<'_>, log2_size: usize, c_idx: usize) -> Result<
         let mut v = 0usize;
         while v < c_max {
             let ctx = base + ctx_offset + (v >> ctx_shift);
-            if d.cab.decision(ctx)? == 0 {
+            if d.cab.decision(ctx) == 0 {
                 break;
             }
             v += 1;
@@ -50,7 +50,7 @@ pub fn last_position(d: &mut Dec<'_>, log2_size: usize, c_idx: usize) -> Result<
     for k in 0..2 {
         out[k] = if prefix[k] > 3 {
             let bits = (prefix[k] >> 1) - 1;
-            let suffix = d.cab.bypass_bits(bits as u32)? as usize;
+            let suffix = d.cab.bypass_bits(bits as u32) as usize;
             ((1usize << bits) * (2 + (prefix[k] & 1))) + suffix
         } else {
             prefix[k]
@@ -144,7 +144,7 @@ pub fn sig_ctx(
 /// Decodes `coeff_abs_level_remaining` (clause 9.3.3.11).
 pub fn read_remaining(d: &mut Dec<'_>, rice: u32) -> Result<u32> {
     let mut prefix = 0u32;
-    while d.cab.bypass()? == 1 {
+    while d.cab.bypass() == 1 {
         prefix += 1;
         if prefix > 24 {
             return Err(Error::InvalidData(
@@ -153,11 +153,11 @@ pub fn read_remaining(d: &mut Dec<'_>, rice: u32) -> Result<u32> {
         }
     }
     if prefix < 3 {
-        let suffix = d.cab.bypass_bits(rice)?;
+        let suffix = d.cab.bypass_bits(rice);
         Ok((prefix << rice) + suffix)
     } else {
         let extra = prefix - 3;
-        let suffix = d.cab.bypass_bits(extra + rice)?;
+        let suffix = d.cab.bypass_bits(extra + rice);
         Ok(suffix + (((1u32 << extra) + 3 - 1) << rice))
     }
 }

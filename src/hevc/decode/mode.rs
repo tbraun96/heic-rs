@@ -25,18 +25,18 @@ pub fn luma_mode(d: &mut Dec<'_>, x0: usize, y0: usize, log2_size: usize) -> Res
     let off_pb = size / n;
     let mut prev = [false; 4];
     for p in prev.iter_mut().take(n * n) {
-        *p = d.cab.decision(off::PREV_INTRA)? != 0;
+        *p = d.cab.decision(off::PREV_INTRA) != 0;
     }
     let mut sel = [0u32; 4];
     for k in 0..n * n {
         let v = if prev[k] {
             let mut idx = 0u32;
-            if d.cab.bypass()? == 1 {
-                idx = 1 + d.cab.bypass()?;
+            if d.cab.bypass() == 1 {
+                idx = 1 + d.cab.bypass();
             }
             idx
         } else {
-            d.cab.bypass_bits(5)?
+            d.cab.bypass_bits(5)
         };
         sel[k] = v;
     }
@@ -105,10 +105,10 @@ pub fn chroma_mode(d: &mut Dec<'_>, _log2_size: usize) -> Result<()> {
     }
     let n = if d.cat == 3 && d.intra_split { 4 } else { 1 };
     for k in 0..n {
-        let raw = if d.cab.decision(off::INTRA_CHROMA)? == 0 {
+        let raw = if d.cab.decision(off::INTRA_CHROMA) == 0 {
             4
         } else {
-            d.cab.bypass_bits(2)?
+            d.cab.bypass_bits(2)
         };
         let luma = d.mode_y[if n == 4 { k } else { 0 }];
         let mut m = match raw {

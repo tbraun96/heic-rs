@@ -23,7 +23,7 @@ pub fn residual_coding(
         } else {
             off::TS_CHROMA
         };
-        ts = d.cab.decision(ctx)? != 0;
+        ts = d.cab.decision(ctx) != 0;
     }
     let scan_idx = scan_index(d, log2_size, c_idx, pred_mode);
     let (mut last_x, mut last_y) = last_position(d, log2_size, c_idx)?;
@@ -75,7 +75,7 @@ pub fn residual_coding(
             }
             let ctx = off::CSBF + c.min(1) as usize + if c_idx > 0 { 2 } else { 0 };
             infer_dc = true;
-            d.cab.decision(ctx)? != 0
+            d.cab.decision(ctx) != 0
         } else {
             true
         };
@@ -96,7 +96,7 @@ pub fn residual_coding(
                 let xc = xs * 4 + pos_scan[m][0] as usize;
                 let yc = ys * 4 + pos_scan[m][1] as usize;
                 let ctx = sig_ctx(d, log2_size, c_idx, xc, yc, xs, ys, sb_n, scan_idx, ts_ctx);
-                if d.cab.decision(off::SIG + ctx)? != 0 {
+                if d.cab.decision(off::SIG + ctx) != 0 {
                     sig[m] = true;
                     infer_dc = false;
                 }

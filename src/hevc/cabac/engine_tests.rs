@@ -51,8 +51,8 @@ fn round_trip(seed: u32, qp: i32, n: usize) {
     let mut dec = Cabac::new(&data, 0, qp).expect("decoder init");
     for b in &bins {
         let got = match *b {
-            Bin::Ctx(i, _) => Bin::Ctx(i, dec.decision(i).expect("decision")),
-            Bin::Bypass(_) => Bin::Bypass(dec.bypass().expect("bypass")),
+            Bin::Ctx(i, _) => Bin::Ctx(i, dec.decision(i)),
+            Bin::Bypass(_) => Bin::Bypass(dec.bypass()),
             Bin::Term(_) => Bin::Term(dec.terminate().expect("terminate")),
         };
         assert_eq!(got, *b, "bin mismatch, qp {qp}, seed {seed}");
@@ -79,7 +79,7 @@ fn engine_round_trips_terminating_zero_bins() {
     let data = enc.finish();
     let mut dec = Cabac::new(&data, 0, 30).expect("decoder init");
     for i in 0..64 {
-        assert_eq!(dec.decision(i % NUM_CTX).expect("decision"), (i & 1) as u32);
+        assert_eq!(dec.decision(i % NUM_CTX), (i & 1) as u32);
         assert_eq!(dec.terminate().expect("terminate"), 0);
     }
     assert_eq!(dec.terminate().expect("terminate"), 1);
