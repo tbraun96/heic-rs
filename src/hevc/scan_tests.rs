@@ -1,6 +1,29 @@
 //! Tests for the compile-time scan order tables (clause 6.5.3).
 
-use super::{scan_order, sub_scan};
+use super::{SUB_RASTER, scan_order, scan_pos, sub_scan};
+
+#[test]
+fn scan_pos_inverts_every_scan() {
+    for log2 in 0..4usize {
+        let n = 1usize << log2;
+        for idx in 0..3usize {
+            let s = scan_order(log2, idx);
+            for (i, p) in s[..n * n].iter().enumerate() {
+                let (x, y) = (p[0] as usize, p[1] as usize);
+                assert_eq!(scan_pos(log2, idx, x, y), i, "scan {idx} size {n} at ({x}, {y})");
+            }
+        }
+    }
+}
+
+#[test]
+fn sub_raster_is_the_sub_block_scan_in_raster_form() {
+    for idx in 0..3usize {
+        for (m, p) in sub_scan(idx)[..16].iter().enumerate() {
+            assert_eq!(SUB_RASTER[idx][m], (p[1] << 2) | p[0], "scan {idx} position {m}");
+        }
+    }
+}
 
 #[test]
 fn every_scan_is_a_permutation_of_the_block() {

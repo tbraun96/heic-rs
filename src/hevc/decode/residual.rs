@@ -1,11 +1,11 @@
 //! Residual coding syntax (clause 7.3.8.11) and its context derivations (9.3.4.2).
 
-use super::residual_ctx::{last_position, scan_index, sig_ctx};
+use super::residual_ctx::{SigCtx, last_position, scan_index};
 use super::residual_levels::decode_levels;
 use super::state::Dec;
 use crate::hevc::cabac::off;
 use crate::hevc::error::{Error, Result};
-use crate::hevc::scan::{scan_order, sub_scan};
+use crate::hevc::scan::{SUB_RASTER, scan_order, scan_pos};
 
 /// Parses one `residual_coding()` into `d.coeffs` and reports `transform_skip_flag`.
 pub fn residual_coding(
@@ -26,7 +26,7 @@ pub fn residual_coding(
         ts = d.cab.decision(ctx) != 0;
     }
     let scan_idx = scan_index(d, log2_size, c_idx, pred_mode);
-    let (mut last_x, mut last_y) = last_position(d, log2_size, c_idx)?;
+    let (mut last_x, mut last_y) = last_position(d, log2_size, c_idx);
     if scan_idx == 2 {
         core::mem::swap(&mut last_x, &mut last_y);
     }
@@ -36,30 +36,14 @@ pub fn residual_coding(
         ));
     }
     let sb_log2 = log2_size - 2;
-    let sb_scan = scan_order(sb_log2, scan_idx);
-    let pos_scan = sub_scan(scan_idx);
     let sb_n = 1usize << sb_log2;
-    let (mut last_sb, mut last_pos) = (sb_n * sb_n - 1, 15usize);
-    loop {
-        let p = sb_scan[last_sb];
-        let q = pos_scan[last_pos];
-        if (p[0] as usize) * 4 + q[0] as usize == last_x
-            && (p[1] as usize) * 4 + q[1] as usize == last_y
-        {
-            break;
-        }
-        if last_pos == 0 {
-            if last_sb == 0 {
-                return Err(Error::InvalidData("last coefficient not found in scan"));
-            }
-            last_pos = 16;
-            last_sb -= 1;
-        }
-        last_pos -= 1;
-    }
+    let sb_scan = scan_order(sb_log2, scan_idx);
+    let last_sb = scan_pos(sb_log2, scan_idx, last_x >> 2, last_y >> 2);
+    let last_pos = scan_pos(2, scan_idx, last_x & 3, last_y & 3);
     d.csbf[..sb_n * sb_n].fill(0);
     let ts_ctx = d.sps.transform_skip_context && (ts || d.tq_bypass);
     let sb_type = (if c_idx == 0 { 0 } else { 2 }) + usize::from(ts || d.tq_bypass);
+    let raster = &SUB_RASTER[scan_idx];
     let mut c1 = 1i32;
     for i in (0..=last_sb).rev() {
         let xs = sb_scan[i][0] as usize;
@@ -83,29 +67,40 @@ pub fn residual_coding(
         if !coded {
             continue;
         }
-        let mut sig = [false; 16];
-        let first: isize = if i == last_sb {
-            sig[last_pos] = true;
-            last_pos as isize - 1
-        } else {
-            15
-        };
-        for mi in (0..=first).rev() {
-            let m = mi as usize;
+        let sig = SigCtx::new(d, log2_size, c_idx, xs, ys, sb_n, scan_idx, ts_ctx);
+        // Significant scan positions of this sub-block, highest first.
+        let mut pos = [0u8; 16];
+        let mut num = 0usize;
+        let mut first = 16usize;
+        if i == last_sb {
+            pos[0] = last_pos as u8;
+            num = 1;
+            first = last_pos;
+        }
+        for m in (0..first).rev() {
             if m > 0 || !infer_dc {
-                let xc = xs * 4 + pos_scan[m][0] as usize;
-                let yc = ys * 4 + pos_scan[m][1] as usize;
-                let ctx = sig_ctx(d, log2_size, c_idx, xc, yc, xs, ys, sb_n, scan_idx, ts_ctx);
+                let ctx = sig.at(m, raster[m] as usize);
                 if d.cab.decision(off::SIG + ctx) != 0 {
-                    sig[m] = true;
+                    pos[num] = m as u8;
+                    num += 1;
                     infer_dc = false;
                 }
             } else {
-                sig[m] = true;
+                pos[num] = m as u8;
+                num += 1;
             }
         }
         decode_levels(
-            d, &sig, i, c_idx, &mut c1, sb_type, log2_size, scan_idx, xs, ys,
+            d,
+            &pos[..num],
+            i,
+            c_idx,
+            &mut c1,
+            sb_type,
+            log2_size,
+            scan_idx,
+            xs,
+            ys,
         )?;
     }
     Ok(ts)
