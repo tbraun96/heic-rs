@@ -57,14 +57,20 @@ const fn bd_shift_of(bit_depth: u8) -> Option<u32> {
 ///
 /// `terms` is how many of `src`'s entries may be non-zero; the rest add
 /// nothing and are not read. Dropping them is exact, not an approximation.
+/// With `SKIP` set, a zero term inside that range is skipped too, which pays
+/// on the sparse large blocks and costs a mispredicted branch on dense 4x4s.
 ///
 /// The largest attainable magnitude is `32 * 32768 * 90 = 94_371_840`, well
 /// inside `i32`, because both stages take 16-bit-clipped inputs.
-fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i32; N] {
+fn mul_1d<const N: usize, const SKIP: bool>(
+    m: &[[i32; N]; N],
+    src: &[i32; N],
+    terms: usize,
+) -> [i32; N] {
     let mut acc = [0i32; N];
     for j in 0..core::cmp::min(terms, N) {
         let c = src[j];
-        if c == 0 {
+        if SKIP && c == 0 {
             continue;
         }
         let row = &m[j];
@@ -79,9 +85,18 @@ fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i
 ///
 /// `block` is row-major with `d[x][y]` at `block[y * N + x]`; it is overwritten
 /// with the residual `r[x][y]` at the same position.
-fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32) {
+///
+/// With `BOUNDED` set, both stages sum only over the rectangle that holds the
+/// non-zero coefficients. A 4x4 block is too small for the scan to pay for
+/// itself, so it runs the full, branch-free matrix product instead; the two
+/// give identical results because the skipped terms are all zero.
+fn two_stage<const N: usize, const BOUNDED: bool>(
+    block: &mut [i32],
+    m: &[[i32; N]; N],
+    bd_shift: u32,
+) {
     let b = &mut block[..N * N];
-    let (rows, cols) = extent(b, N);
+    let (rows, cols) = if BOUNDED { extent(b, N) } else { (N, N) };
     // g[y][x], the clipped output of the column stage. Columns at or past
     // `cols` have an all-zero source, so they stay zero and are not computed;
     // the second stage is then told to stop summing there.
@@ -91,14 +106,14 @@ fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32
         for j in 0..rows {
             col[j] = b[j * N + x];
         }
-        let e = mul_1d(m, &col, rows);
+        let e = mul_1d::<N, BOUNDED>(m, &col, rows);
         for y in 0..N {
             g[y][x] = clip_coeff((e[y] + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
         }
     }
     let rnd = 1i32 << (bd_shift - 1);
     for y in 0..N {
-        let r = mul_1d(m, &g[y], cols);
+        let r = mul_1d::<N, BOUNDED>(m, &g[y], cols);
         for i in 0..N {
             b[y * N + i] = (r[i] + rnd) >> bd_shift;
         }
@@ -121,11 +136,11 @@ pub fn inverse_transform(block: &mut [i32], n: usize, tr_type: u8, bit_depth: u8
         None => return,
     };
     match (tr_type, n) {
-        (1, 4) if block.len() >= 16 => two_stage::<4>(block, &MDST, bd_shift),
-        (0, 4) if block.len() >= 16 => two_stage::<4>(block, &M4, bd_shift),
-        (0, 8) if block.len() >= 64 => two_stage::<8>(block, &M8, bd_shift),
-        (0, 16) if block.len() >= 256 => two_stage::<16>(block, &M16, bd_shift),
-        (0, 32) if block.len() >= 1024 => two_stage::<32>(block, &M32, bd_shift),
+        (1, 4) if block.len() >= 16 => two_stage::<4, false>(block, &MDST, bd_shift),
+        (0, 4) if block.len() >= 16 => two_stage::<4, false>(block, &M4, bd_shift),
+        (0, 8) if block.len() >= 64 => two_stage::<8, true>(block, &M8, bd_shift),
+        (0, 16) if block.len() >= 256 => two_stage::<16, true>(block, &M16, bd_shift),
+        (0, 32) if block.len() >= 1024 => two_stage::<32, true>(block, &M32, bd_shift),
         _ => {}
     }
 }
