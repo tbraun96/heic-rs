@@ -2,11 +2,11 @@
 //!
 //! Chroma is only ever filtered with the short two-tap form — there is no
 //! strong filter and no `dE` derivation — so it shares nothing with the luma
-//! path but the tables and the edge walk, both of which stay in the parent
-//! module.
+//! path but the tables and the segment addressing, both of which stay in the
+//! parent module.
 
 use super::super::{FilterInfo, chroma_qp_from_luma};
-use super::{BS, TC_TABLE, clip3, locked, pos};
+use super::{BS, Seg, TC_TABLE, clip3, locked};
 use crate::hevc::picture::{Picture, Plane, edge};
 
 /// Filters one four-line chroma segment of both chroma planes.
@@ -48,20 +48,17 @@ fn segment(pic: &mut Picture, info: &FilterInfo, ver: bool, e: usize, s: usize) 
         );
         let tc = TC_TABLE[qtc as usize] * scale;
         let plane: &mut Plane = if comp == 0 { &mut pic.cb } else { &mut pic.cr };
+        let seg = Seg::new(plane.stride, ver, e, s, 2);
+        let data = &mut plane.data;
         for i in 0..4 {
-            let g = |k: isize| {
-                let (x, y) = pos(ver, e, s, i, k);
-                plane.at(x, y) as i32
-            };
-            let (p1, p0, q0, q1) = (g(-2), g(-1), g(0), g(1));
+            let (p1, p0) = (data[seg.at(i, 0)] as i32, data[seg.at(i, 1)] as i32);
+            let (q0, q1) = (data[seg.at(i, 2)] as i32, data[seg.at(i, 3)] as i32);
             let d = clip3(-tc, tc, (((q0 - p0) << 2) + p1 - q1 + 4) >> 3);
             if !pl {
-                let (x, y) = pos(ver, e, s, i, -1);
-                plane.put(x, y, clip3(0, max, p0 + d) as u16);
+                data[seg.at(i, 1)] = clip3(0, max, p0 + d) as u16;
             }
             if !ql {
-                let (x, y) = pos(ver, e, s, i, 0);
-                plane.put(x, y, clip3(0, max, q0 - d) as u16);
+                data[seg.at(i, 2)] = clip3(0, max, q0 - d) as u16;
             }
         }
     }

@@ -6,6 +6,7 @@
 use super::deblock::clip3;
 use super::{FilterInfo, SaoCtb};
 use crate::hevc::picture::{Picture, Plane, flags};
+use alloc::vec::Vec;
 
 /// Neighbour offsets of each `SaoEoClass`, clause 8.7.3.2.
 const EO: [[(isize, isize); 2]; 4] = [
@@ -117,7 +118,32 @@ pub fn sao(pic: &mut Picture, info: &FilterInfo) {
         return;
     }
     let ncomp = if info.chroma_array_type == 0 { 1 } else { 3 };
-    let src = [pic.y.clone(), pic.cb.clone(), pic.cr.clone()];
+    let n = info.ctb.len().min(info.pic_w_ctbs * info.pic_h_ctbs);
+    // A component that no CTB applies SAO to keeps its deblocked samples, so
+    // its snapshot would never be read. Not taking it is what makes a picture
+    // that merely signals SAO in its parameter sets cost nothing here.
+    let used = |c: usize| {
+        info.ctb[..n]
+            .iter()
+            .any(|f| f.sao[c].type_idx == BAND || f.sao[c].type_idx == EDGE)
+    };
+    let snapshot = |c: usize, p: &Plane| {
+        if c < ncomp && used(c) {
+            p.clone()
+        } else {
+            Plane {
+                data: Vec::new(),
+                stride: 0,
+                width: 0,
+                height: 0,
+            }
+        }
+    };
+    let src = [
+        snapshot(0, &pic.y),
+        snapshot(1, &pic.cb),
+        snapshot(2, &pic.cr),
+    ];
     let Picture {
         y,
         cb,
@@ -126,7 +152,6 @@ pub fn sao(pic: &mut Picture, info: &FilterInfo) {
         min4_w,
         ..
     } = pic;
-    let n = info.ctb.len().min(info.pic_w_ctbs * info.pic_h_ctbs);
     for addr in 0..n {
         for (c, plane_src) in src.iter().enumerate().take(ncomp) {
             let s = info.ctb[addr].sao[c];

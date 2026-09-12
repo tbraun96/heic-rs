@@ -1,8 +1,10 @@
 //! Intra prediction (clause 8.4.4.2).
 
 mod pred;
+mod smooth;
 
-pub use pred::{filter_refs, predict};
+pub use pred::predict;
+pub use smooth::filter_refs;
 
 /// Neighbouring reference samples for one transform block.
 ///

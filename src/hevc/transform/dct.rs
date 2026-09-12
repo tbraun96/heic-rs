@@ -14,6 +14,8 @@ mod matrix;
 pub(crate) use matrix::{DCT_MATRIX, DST_MATRIX};
 use matrix::{M4, M8, M16, M32, MDST};
 
+use super::extent::extent;
+
 /// Lower bound `coeffMin` on an intermediate transform coefficient (16 bit).
 const COEFF_MIN: i32 = -32768;
 /// Upper bound `coeffMax` on an intermediate transform coefficient (16 bit).
@@ -55,14 +57,20 @@ const fn bd_shift_of(bit_depth: u8) -> Option<u32> {
 ///
 /// `terms` is how many of `src`'s entries may be non-zero; the rest add
 /// nothing and are not read. Dropping them is exact, not an approximation.
+/// With `SKIP` set, a zero term inside that range is skipped too, which pays
+/// on the sparse large blocks and costs a mispredicted branch on dense 4x4s.
 ///
 /// The largest attainable magnitude is `32 * 32768 * 90 = 94_371_840`, well
 /// inside `i32`, because both stages take 16-bit-clipped inputs.
-fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i32; N] {
+fn mul_1d<const N: usize, const SKIP: bool>(
+    m: &[[i32; N]; N],
+    src: &[i32; N],
+    terms: usize,
+) -> [i32; N] {
     let mut acc = [0i32; N];
     for j in 0..core::cmp::min(terms, N) {
         let c = src[j];
-        if c == 0 {
+        if SKIP && c == 0 {
             continue;
         }
         let row = &m[j];
@@ -73,32 +81,41 @@ fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i
     acc
 }
 
-/// The smallest `(rows, cols)` rectangle at the block's top-left corner that
-/// holds every non-zero coefficient.
-///
-/// Residual coding sends a last-significant-coefficient position and nothing
-/// beyond it, so for anything but the flattest content most of a 16x16 or
-/// 32x32 block is zero. Both 1-D stages sum over an index that those zeros
-/// index directly, so bounding them here removes the work rather than
-/// approximating it, and the result is bit-identical.
-fn extent<const N: usize>(b: &[i32]) -> (usize, usize) {
-    let (mut rows, mut cols) = (0usize, 0usize);
-    for (y, row) in b.chunks_exact(N).enumerate() {
-        if let Some(x) = row.iter().rposition(|&v| v != 0) {
-            rows = y + 1;
-            cols = core::cmp::max(cols, x + 1);
-        }
-    }
-    (rows, cols)
-}
-
 /// The two-dimensional inverse transform for one `N`x`N` block.
 ///
 /// `block` is row-major with `d[x][y]` at `block[y * N + x]`; it is overwritten
 /// with the residual `r[x][y]` at the same position.
-fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32) {
+///
+/// With `BOUNDED` set, both stages sum only over the rectangle that holds the
+/// non-zero coefficients. A 4x4 block is too small for the scan to pay for
+/// itself, so it runs the full, branch-free matrix product instead; the two
+/// give identical results because the skipped terms are all zero.
+fn two_stage<const N: usize, const BOUNDED: bool>(
+    block: &mut [i32],
+    m: &[[i32; N]; N],
+    bd_shift: u32,
+) {
     let b = &mut block[..N * N];
-    let (rows, cols) = extent::<N>(b);
+    let (rows, cols) = if BOUNDED { extent(b, N) } else { (N, N) };
+    let rnd = 1i32 << (bd_shift - 1);
+    if BOUNDED && rows == 1 {
+        // Only the first coefficient row is non-zero, so the column stage
+        // gives every row of g the same values, m[0][y] * d[x] with m[0][y]
+        // equal to m[0][0] for every y of the DCT. The row stage therefore
+        // produces one residual row, repeated down the block.
+        let mut g0 = [0i32; N];
+        for (g, &c) in g0.iter_mut().zip(b.iter()).take(cols) {
+            *g = clip_coeff((m[0][0] * c + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
+        }
+        let mut row = mul_1d::<N, true>(m, &g0, cols);
+        for v in row.iter_mut() {
+            *v = (*v + rnd) >> bd_shift;
+        }
+        for out in b.chunks_exact_mut(N) {
+            out.copy_from_slice(&row);
+        }
+        return;
+    }
     // g[y][x], the clipped output of the column stage. Columns at or past
     // `cols` have an all-zero source, so they stay zero and are not computed;
     // the second stage is then told to stop summing there.
@@ -108,14 +125,19 @@ fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32
         for j in 0..rows {
             col[j] = b[j * N + x];
         }
-        let e = mul_1d(m, &col, rows);
+        let e = mul_1d::<N, BOUNDED>(m, &col, rows);
         for y in 0..N {
             g[y][x] = clip_coeff((e[y] + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
         }
     }
-    let rnd = 1i32 << (bd_shift - 1);
     for y in 0..N {
-        let r = mul_1d(m, &g[y], cols);
+        if BOUNDED && cols == 1 {
+            // One column of g means every sample of row y is m[0][i] * g[y][0]
+            // with m[0][i] flat across the DCT's first basis row.
+            b[y * N..y * N + N].fill((m[0][0] * g[y][0] + rnd) >> bd_shift);
+            continue;
+        }
+        let r = mul_1d::<N, BOUNDED>(m, &g[y], cols);
         for i in 0..N {
             b[y * N + i] = (r[i] + rnd) >> bd_shift;
         }
@@ -138,11 +160,11 @@ pub fn inverse_transform(block: &mut [i32], n: usize, tr_type: u8, bit_depth: u8
         None => return,
     };
     match (tr_type, n) {
-        (1, 4) if block.len() >= 16 => two_stage::<4>(block, &MDST, bd_shift),
-        (0, 4) if block.len() >= 16 => two_stage::<4>(block, &M4, bd_shift),
-        (0, 8) if block.len() >= 64 => two_stage::<8>(block, &M8, bd_shift),
-        (0, 16) if block.len() >= 256 => two_stage::<16>(block, &M16, bd_shift),
-        (0, 32) if block.len() >= 1024 => two_stage::<32>(block, &M32, bd_shift),
+        (1, 4) if block.len() >= 16 => two_stage::<4, false>(block, &MDST, bd_shift),
+        (0, 4) if block.len() >= 16 => two_stage::<4, false>(block, &M4, bd_shift),
+        (0, 8) if block.len() >= 64 => two_stage::<8, true>(block, &M8, bd_shift),
+        (0, 16) if block.len() >= 256 => two_stage::<16, true>(block, &M16, bd_shift),
+        (0, 32) if block.len() >= 1024 => two_stage::<32, true>(block, &M32, bd_shift),
         _ => {}
     }
 }
@@ -181,6 +203,10 @@ pub fn transform_skip(block: &mut [i32], n: usize, bit_depth: u8, rotate: bool) 
         *v = ((*v << ts_shift) + rnd) >> bd_shift;
     }
 }
+
+#[cfg(test)]
+#[path = "dct_ref.rs"]
+mod reference;
 
 #[cfg(test)]
 #[path = "dct_tests.rs"]

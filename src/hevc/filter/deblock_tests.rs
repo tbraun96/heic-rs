@@ -197,3 +197,33 @@ fn bypass_on_p_side_keeps_p_samples() {
         assert_eq!(p.y.at(9, y), 158);
     }
 }
+
+/// `src` turned on its side, with its vertical edge marked as horizontal.
+fn transposed(src: &Picture) -> Picture {
+    let mut p = Picture::new(W, H, 0, 0).expect("picture");
+    for y in 0..H {
+        for x in 0..W {
+            p.y.put(y, x, src.y.at(x, y));
+        }
+    }
+    p.qp_y.copy_from_slice(&src.qp_y);
+    for x in (0..W).step_by(8) {
+        p.mark_edge(x, 8, 8, edge::HOR);
+    }
+    p
+}
+
+#[test]
+fn horizontal_edge_is_the_transpose_of_the_vertical_one() {
+    for &(left, right) in &[(100u16, 160u16), (100, 108)] {
+        let mut v = mk_pic(left, right, 37, true);
+        let mut h = transposed(&v);
+        deblock(&mut v, &mk_info(false));
+        deblock(&mut h, &mk_info(false));
+        for y in 0..H {
+            for x in 0..W {
+                assert_eq!(h.y.at(y, x), v.y.at(x, y), "{left}->{right} at {x},{y}");
+            }
+        }
+    }
+}
