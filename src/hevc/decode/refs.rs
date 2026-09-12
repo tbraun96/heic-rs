@@ -27,6 +27,15 @@ pub fn gather_refs(d: &Dec<'_>, x: usize, y: usize, n: usize, c_idx: usize) -> R
     let total = 4 * n + 1;
     let mut r = Refs::new(n);
     let mut avail = [false; 129];
+    // `Dec::available` reads its argument only through `z`, which is indexed
+    // in minimum transform blocks, and through the CTB address, which is
+    // coarser still. Every reference sample inside one minimum transform
+    // block therefore gets the same answer, and this walk crosses one block
+    // every four luma samples. Remembering the last answer turns the clause
+    // 6.4.1 derivation from once per sample into once per block; the run is
+    // contiguous, so a single-entry memo catches all of it.
+    let shift = d.geo.min_tb_log2;
+    let mut memo: Option<((usize, usize), bool)> = None;
     // Index 0 is p[-1][2n-1]; index 2n the corner; index 4n is p[2n-1][-1].
     for (i, a) in avail.iter_mut().enumerate().take(total) {
         let (cx, cy) = if i <= 2 * n {
@@ -41,7 +50,16 @@ pub fn gather_refs(d: &Dec<'_>, x: usize, y: usize, n: usize, c_idx: usize) -> R
         }
         let lx = (x as isize + cx) * sw as isize;
         let ly = (y as isize + cy) * sh as isize;
-        if !d.available(xc, yc, lx, ly) {
+        let key = ((lx as usize) >> shift, (ly as usize) >> shift);
+        let ok = match memo {
+            Some((k, v)) if k == key => v,
+            _ => {
+                let v = d.available(xc, yc, lx, ly);
+                memo = Some((key, v));
+                v
+            }
+        };
+        if !ok {
             continue;
         }
         if d.pps.constrained_intra_pred {
