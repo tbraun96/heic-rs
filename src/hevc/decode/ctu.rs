@@ -29,7 +29,7 @@ pub fn coding_quadtree(
         {
             inc += 1;
         }
-        d.cab.decision(off::SPLIT_CU + inc)? != 0
+        d.cab.decision(off::SPLIT_CU + inc) != 0
     } else {
         log2_size > d.sps.log2_min_cb
     };
@@ -67,10 +67,10 @@ fn coding_unit(d: &mut Dec<'_>, x0: usize, y0: usize, log2_size: usize, depth: u
     Picture::fill4(&mut d.pic.ct_depth, d.pic.min4_w, x0, y0, size, depth);
     d.tq_bypass = false;
     if d.pps.transquant_bypass {
-        d.tq_bypass = d.cab.decision(off::TQ_BYPASS)? != 0;
+        d.tq_bypass = d.cab.decision(off::TQ_BYPASS) != 0;
     }
     d.intra_split = false;
-    if log2_size == d.sps.log2_min_cb && d.cab.decision(off::PART_MODE)? == 0 {
+    if log2_size == d.sps.log2_min_cb && d.cab.decision(off::PART_MODE) == 0 {
         d.intra_split = true;
     }
     let mut cu_flags = 0u8;

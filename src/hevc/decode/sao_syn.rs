@@ -12,10 +12,10 @@ pub fn sao(d: &mut Dec<'_>, ctb_rs: usize) -> Result<()> {
     let mut merge_left = false;
     let mut merge_up = false;
     if rx > 0 && mergeable(d, ctb_rs, ctb_rs - 1) {
-        merge_left = d.cab.decision(off::SAO_MERGE)? != 0;
+        merge_left = d.cab.decision(off::SAO_MERGE) != 0;
     }
     if !merge_left && ry > 0 && mergeable(d, ctb_rs, ctb_rs - w) {
-        merge_up = d.cab.decision(off::SAO_MERGE)? != 0;
+        merge_up = d.cab.decision(off::SAO_MERGE) != 0;
     }
     if merge_left || merge_up {
         let src = if merge_left { ctb_rs - 1 } else { ctb_rs - w };
@@ -54,7 +54,7 @@ pub fn sao(d: &mut Dec<'_>, ctb_rs: usize) -> Result<()> {
             let mut abs = [0u32; 4];
             for a in abs.iter_mut() {
                 let mut v = 0u32;
-                while v < cap && d.cab.bypass()? == 1 {
+                while v < cap && d.cab.bypass() == 1 {
                     v += 1;
                 }
                 *a = v;
@@ -66,18 +66,18 @@ pub fn sao(d: &mut Dec<'_>, ctb_rs: usize) -> Result<()> {
             };
             if s.type_idx == 1 {
                 for (k, &a) in abs.iter().enumerate() {
-                    let neg = a != 0 && d.cab.bypass()? == 1;
+                    let neg = a != 0 && d.cab.bypass() == 1;
                     let v = (a << scale) as i16;
                     s.offsets[k] = if neg { -v } else { v };
                 }
-                s.band_position = d.cab.bypass_bits(5)? as u8;
+                s.band_position = d.cab.bypass_bits(5) as u8;
             } else {
                 for (k, &a) in abs.iter().enumerate() {
                     let v = (a << scale) as i16;
                     s.offsets[k] = if k < 2 { v } else { -v };
                 }
                 if c != 2 {
-                    s.eo_class = d.cab.bypass_bits(2)? as u8;
+                    s.eo_class = d.cab.bypass_bits(2) as u8;
                 }
             }
         }
@@ -91,10 +91,10 @@ pub fn sao(d: &mut Dec<'_>, ctb_rs: usize) -> Result<()> {
 
 /// Decodes `sao_type_idx_luma` / `sao_type_idx_chroma` (Table 9-38).
 fn read_type(d: &mut Dec<'_>) -> Result<u8> {
-    if d.cab.decision(off::SAO_TYPE)? == 0 {
+    if d.cab.decision(off::SAO_TYPE) == 0 {
         return Ok(0);
     }
-    Ok(if d.cab.bypass()? == 0 { 1 } else { 2 })
+    Ok(if d.cab.bypass() == 0 { 1 } else { 2 })
 }
 
 /// True when the SAO parameters of `src` may be merged into `cur`.

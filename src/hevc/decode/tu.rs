@@ -27,7 +27,7 @@ pub fn transform_tree(
         && depth < max_depth
         && !(d.intra_split && depth == 0)
     {
-        d.cab.decision(off::SPLIT_TRANSFORM + 5 - log2_size)? != 0
+        d.cab.decision(off::SPLIT_TRANSFORM + 5 - log2_size) != 0
     } else {
         forced
     };
@@ -43,9 +43,9 @@ pub fn transform_tree(
             };
             let mut v = [false; 2];
             if parent {
-                v[0] = d.cab.decision(off::CBF_CHROMA + dp)? != 0;
+                v[0] = d.cab.decision(off::CBF_CHROMA + dp) != 0;
                 if extra {
-                    v[1] = d.cab.decision(off::CBF_CHROMA + dp)? != 0;
+                    v[1] = d.cab.decision(off::CBF_CHROMA + dp) != 0;
                 }
             }
             if c == 0 {
@@ -78,7 +78,7 @@ pub fn transform_tree(
         }
         return Ok(());
     }
-    let cbf_luma = d.cab.decision(off::CBF_LUMA + usize::from(depth == 0))? != 0;
+    let cbf_luma = d.cab.decision(off::CBF_LUMA + usize::from(depth == 0)) != 0;
     transform_unit(
         d, x0, y0, x_base, y_base, log2_size, depth, blk_idx, cbf_luma,
     )
@@ -162,7 +162,7 @@ fn read_qp_delta(d: &mut Dec<'_>) -> Result<i32> {
     let mut prefix = 0u32;
     while prefix < 5 {
         let ctx = off::CU_QP_DELTA + usize::from(prefix > 0);
-        if d.cab.decision(ctx)? == 0 {
+        if d.cab.decision(ctx) == 0 {
             break;
         }
         prefix += 1;
@@ -170,22 +170,22 @@ fn read_qp_delta(d: &mut Dec<'_>) -> Result<i32> {
     let mut v = prefix;
     if prefix == 5 {
         let mut k = 0u32;
-        while d.cab.bypass()? == 1 && k < 24 {
+        while d.cab.bypass() == 1 && k < 24 {
             k += 1;
         }
-        v = 5 + (1u32 << k) - 1 + d.cab.bypass_bits(k)?;
+        v = 5 + (1u32 << k) - 1 + d.cab.bypass_bits(k);
     }
     if v == 0 {
         return Ok(0);
     }
-    let sign = d.cab.bypass()?;
+    let sign = d.cab.bypass();
     Ok(if sign == 1 { -(v as i32) } else { v as i32 })
 }
 
 /// Parses `cu_chroma_qp_offset_flag` and `cu_chroma_qp_offset_idx`.
 fn read_chroma_qp_offset(d: &mut Dec<'_>) -> Result<()> {
     d.cqo_coded = true;
-    if d.cab.decision(off::CHROMA_QP_FLAG)? == 0 {
+    if d.cab.decision(off::CHROMA_QP_FLAG) == 0 {
         d.cqo_cb = 0;
         d.cqo_cr = 0;
         return Ok(());
@@ -193,7 +193,7 @@ fn read_chroma_qp_offset(d: &mut Dec<'_>) -> Result<()> {
     let len = d.pps.cb_qp_offset_list.len();
     let mut idx = 0usize;
     while idx + 1 < len {
-        if d.cab.decision(off::CHROMA_QP_IDX)? == 0 {
+        if d.cab.decision(off::CHROMA_QP_IDX) == 0 {
             break;
         }
         idx += 1;

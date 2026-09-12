@@ -1,17 +1,19 @@
 //! Level, sign and remainder decoding for one 4x4 residual sub-block.
 
+use super::residual_ctx::read_remaining;
 use super::state::Dec;
 use crate::hevc::cabac::off;
 use crate::hevc::error::Result;
 use crate::hevc::scan::sub_scan;
 
-use super::residual_ctx::read_remaining;
-
 /// Decodes the greater1, greater2, sign and remainder bins of one sub-block.
+///
+/// `sig` lists the significant scan positions of the sub-block, highest first,
+/// which is the order every one of these syntax elements is coded in.
 #[allow(clippy::too_many_arguments)]
 pub fn decode_levels(
     d: &mut Dec<'_>,
-    sig: &[bool; 16],
+    sig: &[u8],
     i: usize,
     c_idx: usize,
     c1: &mut i32,
@@ -26,63 +28,51 @@ pub fn decode_levels(
         ctx_set += 1;
     }
     *c1 = 1;
+    let num = sig.len();
+    if num == 0 {
+        return Ok(());
+    }
     let base = off::GT1 + ctx_set * 4 + if c_idx > 0 { 16 } else { 0 };
-    let mut gt1 = [false; 16];
-    let mut gt2 = [false; 16];
-    let mut num_gt1 = 0usize;
-    let mut last_gt1: i32 = -1;
-    let mut first_sig: i32 = -1;
-    let mut last_sig: i32 = -1;
-    for m in (0..16).rev() {
-        if !sig[m] {
-            continue;
-        }
-        if num_gt1 < 8 {
-            let bin = d.cab.decision(base + (*c1).min(3) as usize)? != 0;
-            gt1[m] = bin;
-            num_gt1 += 1;
-            if bin {
-                *c1 = 0;
-                if last_gt1 < 0 {
-                    last_gt1 = m as i32;
-                }
-            } else if *c1 > 0 && *c1 < 3 {
-                *c1 += 1;
+    // Bit `k` of `gt1` is `coeff_abs_level_greater1_flag` of `sig[k]`.
+    let mut gt1 = 0u16;
+    let mut last_gt1 = usize::MAX;
+    for k in 0..num.min(8) {
+        let bin = d.cab.decision(base + (*c1).min(3) as usize) != 0;
+        if bin {
+            gt1 |= 1 << k;
+            *c1 = 0;
+            if last_gt1 == usize::MAX {
+                last_gt1 = k;
             }
+        } else if *c1 > 0 && *c1 < 3 {
+            *c1 += 1;
         }
-        if last_sig < 0 {
-            last_sig = m as i32;
-        }
-        first_sig = m as i32;
     }
-    let sign_hidden = last_sig - first_sig > 3 && !d.tq_bypass;
-    if last_gt1 >= 0 {
+    let sign_hidden = i32::from(sig[0]) - i32::from(sig[num - 1]) > 3 && !d.tq_bypass;
+    let mut gt2 = false;
+    if last_gt1 != usize::MAX {
         let ctx = off::GT2 + ctx_set + if c_idx > 0 { 4 } else { 0 };
-        gt2[last_gt1 as usize] = d.cab.decision(ctx)? != 0;
+        gt2 = d.cab.decision(ctx) != 0;
     }
-    let mut signs = [false; 16];
-    for m in (0..16).rev() {
-        if sig[m] && !(d.pps.sign_data_hiding && sign_hidden && m as i32 == first_sig) {
-            signs[m] = d.cab.bypass()? != 0;
-        }
-    }
+    let hide = d.pps.sign_data_hiding && sign_hidden;
+    // The sign flags come as one run of bypass bins, `sig[0]`'s first, with
+    // the hidden one (the lowest position) simply absent from the end.
+    let coded_signs = num - usize::from(hide);
+    let signs = d.cab.bypass_bits(coded_signs as u32);
     let mut rice = if d.sps.persistent_rice {
         (d.stat_coeff[sb_type] / 4) as u32
     } else {
         0
     };
     let mut first_rem = true;
-    let mut num_sig = 0usize;
     let mut sum_abs = 0i64;
     let pos_scan = sub_scan(scan_idx);
     let n = 1usize << log2_size;
-    for m in (0..16).rev() {
-        if !sig[m] {
-            continue;
-        }
-        let base_level = 1 + i32::from(gt1[m]) + i32::from(gt2[m]);
-        let threshold = if num_sig < 8 {
-            if m as i32 == last_gt1 { 3 } else { 2 }
+    for (k, &m) in sig.iter().enumerate() {
+        let m = m as usize & 15;
+        let base_level = 1 + i32::from((gt1 >> k) & 1 != 0) + i32::from(k == last_gt1 && gt2);
+        let threshold = if k < 8 {
+            if k == last_gt1 { 3 } else { 2 }
         } else {
             1
         };
@@ -102,16 +92,15 @@ pub fn decode_levels(
         }
         sum_abs += level;
         let mut v = level;
-        if signs[m] {
+        if k < coded_signs && (signs >> (coded_signs - 1 - k)) & 1 != 0 {
             v = -v;
         }
-        if d.pps.sign_data_hiding && sign_hidden && m as i32 == first_sig && sum_abs % 2 == 1 {
+        if hide && k == num - 1 && sum_abs % 2 == 1 {
             v = -v;
         }
         let xc = xs * 4 + pos_scan[m][0] as usize;
         let yc = ys * 4 + pos_scan[m][1] as usize;
         d.coeffs[yc * n + xc] = v.clamp(-32768, 32767) as i32;
-        num_sig += 1;
     }
     Ok(())
 }

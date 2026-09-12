@@ -10,6 +10,22 @@ use super::Cabac;
 use super::ctx::{INIT_VALUES, NUM_CTX};
 use super::encoder::Enc;
 use super::tables::{RANGE_TAB_LPS, TRANS_IDX_LPS, TRANS_IDX_MPS};
+use crate::hevc::error::Error;
+
+#[test]
+fn running_past_the_end_is_reported_by_the_next_terminate_bin() {
+    let mut dec = Cabac::new(&[0u8; 4], 0, 26).expect("decoder init");
+    // Sixty-four bypass bins shift in eight bytes: within the overread slack.
+    for _ in 0..64 {
+        dec.bypass();
+    }
+    assert_eq!(dec.terminate(), Ok(0));
+    // Two hundred more run well past it; the bins themselves never fail.
+    for _ in 0..200 {
+        dec.bypass();
+    }
+    assert_eq!(dec.terminate(), Err(Error::Truncated));
+}
 
 /// One bin of a test sequence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,8 +67,8 @@ fn round_trip(seed: u32, qp: i32, n: usize) {
     let mut dec = Cabac::new(&data, 0, qp).expect("decoder init");
     for b in &bins {
         let got = match *b {
-            Bin::Ctx(i, _) => Bin::Ctx(i, dec.decision(i).expect("decision")),
-            Bin::Bypass(_) => Bin::Bypass(dec.bypass().expect("bypass")),
+            Bin::Ctx(i, _) => Bin::Ctx(i, dec.decision(i)),
+            Bin::Bypass(_) => Bin::Bypass(dec.bypass()),
             Bin::Term(_) => Bin::Term(dec.terminate().expect("terminate")),
         };
         assert_eq!(got, *b, "bin mismatch, qp {qp}, seed {seed}");
@@ -79,7 +95,7 @@ fn engine_round_trips_terminating_zero_bins() {
     let data = enc.finish();
     let mut dec = Cabac::new(&data, 0, 30).expect("decoder init");
     for i in 0..64 {
-        assert_eq!(dec.decision(i % NUM_CTX).expect("decision"), (i & 1) as u32);
+        assert_eq!(dec.decision(i % NUM_CTX), (i & 1) as u32);
         assert_eq!(dec.terminate().expect("terminate"), 0);
     }
     assert_eq!(dec.terminate().expect("terminate"), 1);

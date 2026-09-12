@@ -38,9 +38,9 @@ pub fn decode_bins(data: &[u8], n: usize, qp: i32) -> Result<u32> {
         s ^= s >> 17;
         s ^= s << 5;
         acc = acc.wrapping_add(if s % 8 < 6 {
-            c.decision((s >> 8) as usize % NUM_CTX)?
+            c.decision((s >> 8) as usize % NUM_CTX)
         } else {
-            c.bypass()?
+            c.bypass()
         });
     }
     Ok(acc)
