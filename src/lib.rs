@@ -1,7 +1,7 @@
 //! A pure-Rust decoder for HEIC and HEIF still images.
 //!
-//! No C, no `unsafe`, no required dependencies, and a `no_std` core that
-//! builds for `wasm32-unknown-unknown`.
+//! No C, no `unsafe`, one optional dependency, and a `no_std` core that
+//! builds for `wasm32-unknown-unknown` with no dependencies at all.
 //!
 //! # Status
 //!

@@ -7,9 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**0.1.0 has not been released.** The container half of the crate is complete, but the HEVC
-still-picture decoder is not linked in, so `decode()` cannot yet produce pixels. There will be no
-release until it can. No release date is promised here because none has been set.
+**0.1.0 has not been released.** The crate now decodes HEIC files to pixels end to end. No release
+date is promised here because none has been set.
 
 ### Changed
 
@@ -21,6 +20,14 @@ release until it can. No release date is promised here because none has been set
   previous floating-point result, a bound `tests/color_fixed.rs` asserts against a float reference.
 - `color::convert` refuses a frame whose `bit_depth` is outside 8 to 16 with `Error::Unsupported`,
   rather than scaling by a shift it cannot represent.
+- `color::convert` takes a thread count, and `DecodeOptions` grows a `threads` field. Both default
+  to `None`, which is rayon's pool.
+- The inverse transform bounds both of its one-dimensional stages by the smallest top-left rectangle
+  that holds a non-zero coefficient, which residual coding already guarantees is small. Output is
+  bit-identical; a single-tile decode is about 16% faster for it.
+- Intra reference availability (clause 6.4.1) is derived once per minimum transform block rather
+  than once per reference sample, which is exact because the derivation reads its argument only at
+  that granularity.
 
 ### Added
 
@@ -44,18 +51,30 @@ release until it can. No release date is promised here because none has been set
 - `no_std` + `alloc` core with zero required dependencies; `wasm32-unknown-unknown` builds with
   `--no-default-features`.
 - `#![forbid(unsafe_code)]` at the crate root.
-- Examples `decode`, `probe` and `to_png`; criterion benches with the `container_parse`,
-  `grid_compose` and `color_convert` groups.
+- HEVC still-picture intra decoder as the `hevc` module: NAL and parameter set parsing, CABAC, the
+  coding quadtree, intra prediction, inverse DCT-II and DST-VII, dequantisation with scaling lists,
+  deblocking and SAO. Main, Main 10 and Main Still Picture; 4:2:0, 4:2:2, 4:4:4 and monochrome;
+  8-bit and 10-bit. Written from the specification text; see [NOTICE](NOTICE).
+- `Error::MissingParameterSet`, for a slice that names a VPS, SPS or PPS the `hvcC` record does not
+  carry. The decoder's own error type is converted to `Error` at the seam, carrying its message, so
+  a caller still sees exactly one error type.
+- `parallel` feature, on by default and implying `std`: grid tiles are decoded on a rayon pool and
+  colour conversion is split into row bands. `DecodeOptions::threads` selects the pool, the serial
+  path, or a private pool of a given size. Output is byte-identical in every case, which
+  `tests/parallel.rs` asserts across thread counts and every pixel layout.
+- Examples `decode`, `probe`, `to_png` and `throughput`; criterion benches with the
+  `container_parse`, `grid_compose`, `color_convert`, `color_threads` and `decode_file` groups, and
+  a `bench`-gated `hevc` bench for the decoder's internal stages.
 
 ### Known limitations
 
-- `decode()` reaches the codec seam and returns
-  `Error::Unsupported("the HEVC decoder is not linked in this build")`. `probe()` is unaffected and
-  works fully, because it never decodes pixels.
+- Per thread the codec is slower than the AGPL `heic` crate on low-residual content; parallelism is
+  what puts `heic-rs` ahead on anything stored as a grid. A 64x64 single-tile file is still about
+  30% slower than that alternative. See the README's performance section.
 - AVIF, image sequences and animation, `iovl` overlay derivation, and encoding are all out of scope
   and reported as `Error::Unsupported`.
-- Pixel comparison tests against the macOS reference decoder exist but are `#[ignore]`d until the
-  HEVC decoder lands.
+- Inter prediction, P and B slices, dependent slice segments and the multilayer, 3D, screen-content
+  and range extensions are refused by the decoder with a message naming the tool.
 - No fuzzing has been run yet. See [SECURITY.md](SECURITY.md).
 
 [Unreleased]: https://github.com/tbraun96/heic-rs/commits/main
