@@ -89,10 +89,13 @@ pub fn gather_refs(d: &Dec<'_>, x: usize, y: usize, n: usize, c_idx: usize) -> R
             }
             if d.available(xc, yc, (xx * sw) as isize, ((y - 1) * sh) as isize) {
                 let end = (xx + step_x).min(plane.width).min(x + 2 * n);
+                // A plain loop: the run is two or four samples, for which a
+                // library copy is all call overhead.
                 let i0 = 2 * n + 1 + k;
-                let len = end - xx;
-                r.buf[i0..i0 + len].copy_from_slice(&data[row + xx..row + end]);
-                avail[i0..i0 + len].fill(true);
+                for (j, &v) in data[row + xx..row + end].iter().enumerate() {
+                    r.buf[i0 + j] = v;
+                    avail[i0 + j] = true;
+                }
             } else {
                 all = false;
             }
