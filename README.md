@@ -256,18 +256,20 @@ sampling, depth and layout:
 | 512x512 4:2:0 8-bit Gray8 | - | **37.9 us** | 6925 |
 | 512x512 4:4:4 8-bit Rgb8 | - | **175 us** | 1498 |
 | 512x512 4:2:0 10-bit Rgb8 | - | **193 us** | 1359 |
+| 512x512 4:2:0 8-bit Rgb16 | 1.84 ms | **198 us** | 1321 |
 | 2048x1536 4:2:0 8-bit Rgb8 | 21.97 ms | **2.240 ms** | 1405 |
 | 2048x1536 4:2:0 8-bit Rgba8 | 23.23 ms | **2.345 ms** | 1342 |
 | 2048x1536 4:2:0 8-bit Gray8 | - | **453 us** | 6938 |
 | 2048x1536 4:4:4 8-bit Rgb8 | - | **2.114 ms** | 1488 |
 | 2048x1536 4:2:0 10-bit Rgb8 | - | **2.273 ms** | 1384 |
-| 2048x1536 4:2:0 10-bit Rgb16 | 21.98 ms | **2.411 ms** | 1305 |
+| 2048x1536 4:2:0 8-bit Rgb16 | 21.98 ms | **2.381 ms** | 1321 |
 | 4032x3024 4:2:0 8-bit Rgb8 | - | **8.622 ms** | 1414 |
 | 4032x3024 4:2:0 8-bit Rgba8 | - | **9.644 ms** | 1264 |
 | 4032x3024 4:2:0 8-bit Gray8 | - | **1.762 ms** | 6921 |
 | 4032x3024 4:4:4 8-bit Rgb8 | - | **8.322 ms** | 1465 |
 
-A dash means the case did not exist before; the four that did are the four the old table published.
+A dash means the case did not exist before; the six that have a before are the six the old
+`color_convert` group measured, at the same size, sampling, depth and layout.
 Nothing got slower. 2048x1536 to Rgb8 went from 22.0 ms to 2.24 ms, **9.8x**, from 143 megapixels
 per second to 1.41 gigapixels. The 2048x1536 shape is now 2.2 ms of the 8.54 ms an entire decode
 costs the AGPL alternative on this machine, rather than 2.6x that whole budget.

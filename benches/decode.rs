@@ -105,20 +105,23 @@ fn color_convert(c: &mut Criterion) {
             }
         }
     }
-    // One 16-bit case, to show what the wider output costs.
-    let f = frame(2048, 1536, ChromaFormat::Yuv420, 10);
-    group.throughput(Throughput::Elements(2048 * 1536));
-    group.bench_function("2048x1536 4:2:0 10bit Rgb16", |b| {
-        b.iter(|| {
-            heic_rs::color::convert(
-                std::hint::black_box(&f),
-                None,
-                nclx,
-                PixelLayout::Rgb16,
-                u64::MAX,
-            )
-        })
-    });
+    // The 16-bit output, at the two shapes the previous table published it at,
+    // so that its before and after are the same case.
+    for (w, h) in [(512u32, 512u32), (2048, 1536)] {
+        let f = frame(w, h, ChromaFormat::Yuv420, 8);
+        group.throughput(Throughput::Elements(u64::from(w) * u64::from(h)));
+        group.bench_function(format!("{w}x{h} 4:2:0 8bit Rgb16"), |b| {
+            b.iter(|| {
+                heic_rs::color::convert(
+                    std::hint::black_box(&f),
+                    None,
+                    nclx,
+                    PixelLayout::Rgb16,
+                    u64::MAX,
+                )
+            })
+        });
+    }
     group.finish();
 }
 
