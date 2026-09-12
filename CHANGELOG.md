@@ -69,8 +69,10 @@ date is promised here because none has been set.
 ### Known limitations
 
 - Per thread the codec is slower than the AGPL `heic` crate on low-residual content; parallelism is
-  what puts `heic-rs` ahead on anything stored as a grid. A 64x64 single-tile file is still about
-  30% slower than that alternative. See the README's performance section.
+  what puts `heic-rs` ahead on anything stored as a grid. Whole-file, RGB8 out, on an Apple M3 Max:
+  2.87 ms against 7.78 ms at 2048x1536, 3.35 against 5.04 at 1024x1024, 2.07 against 2.30 at
+  512x512, and 0.030 against 0.023 at 64x64 — the last of those a third slower, and the only case
+  parallelism cannot reach. See the README's performance section.
 - AVIF, image sequences and animation, `iovl` overlay derivation, and encoding are all out of scope
   and reported as `Error::Unsupported`.
 - Inter prediction, P and B slices, dependent slice segments and the multilayer, 3D, screen-content

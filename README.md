@@ -215,36 +215,38 @@ The question this crate has to answer is whether a permissively licensed decoder
 that the licence is the only thing you are choosing on. Here it is, measured rather than claimed.
 
 **Method.** Whole file in, RGB8 out — open, walk the container, decode every tile, compose, convert
-colour. Release build, one warm-up pass discarded, then the best of nine. The same corpus of four
-HEICs for both decoders, generated from our own synthetic PNGs with `sips`. Our column comes from
-`examples/throughput.rs`, which takes a directory of HEICs, so the harness can be pointed at either
-decoder and the two columns are the same measurement.
+colour. Release build, one warm-up pass discarded, then the best of nine. The two decoders are run
+alternately and the whole cycle is repeated five times, with the lowest run of all reported, so that
+whatever else the machine was doing hit both equally. The same corpus of four HEICs for both,
+generated from our own synthetic PNGs with `sips`. Our column comes from `examples/throughput.rs`,
+which takes a directory of HEICs, so the harness can be pointed at either decoder and the two
+columns are the same measurement.
 
 **Machine.** Apple M3 Max — 12 performance cores, 4 efficiency — macOS 27.0, 64 GB, `rustc 1.98.0`,
 `--release`. `heic-rs` on rayon's default pool, which is 16 threads here. The alternative is the
 `heic` crate by imazen 0.1.6 with `std` and its own `parallel` feature, which is the configuration
 its README recommends.
 
-| file | pixels | `heic-rs` | `heic` (AGPL) | ratio |
-|---|---|---|---|---|
-| `flat-64.heic` | 64x64 | 0.032 ms | **0.025 ms** | 0.77x |
-| `gradient-512.heic` | 512x512 | **2.19 ms** | 2.36 ms | 1.08x |
-| `checker-1024.heic` | 1024x1024 | **3.41 ms** | 5.02 ms | 1.47x |
-| `photo-2048.heic` | 2048x1536 | **3.26 ms** | 8.12 ms | 2.49x |
+| file | pixels | `heic-rs` | `heic` (AGPL) | ratio | throughput |
+|---|---|---|---|---|---|
+| `flat-64.heic` | 64x64 | 0.030 ms | **0.023 ms** | 0.75x | 135 against 179 Mpx/s |
+| `gradient-512.heic` | 512x512 | **2.07 ms** | 2.30 ms | 1.11x | 127 against 114 Mpx/s |
+| `checker-1024.heic` | 1024x1024 | **3.35 ms** | 5.04 ms | 1.50x | 313 against 208 Mpx/s |
+| `photo-2048.heic` | 2048x1536 | **2.87 ms** | 7.78 ms | 2.71x | 1096 against 404 Mpx/s |
 
-Bold is the faster of the two. In throughput: 128 against 164 Mpx/s, 120 against 111, 308 against
-209, and 966 against 387.
+Bold is the faster of the two.
 
 **Where we win, and why.** On anything stored as a grid — which on macOS is anything above 512 px on
 a side, so every photograph — the tiles are independent coded pictures and we decode them at the same
-time. `photo-2048.heic` is twelve 512x512 tiles, and that is where the 2.5x comes from.
+time. `photo-2048.heic` is twelve 512x512 tiles, and that is where the 2.7x comes from.
 
 **Where we lose, and why.** `flat-64.heic` is 64x64, a single coded picture, 4096 pixels. There is no
 grid to spread and the colour pass is over in three microseconds, so the number is the serial codec
-and nothing else: 32 microseconds against 25. Per thread the alternative's codec is genuinely faster
-than ours on low-residual content — it reaches 166 Mpx/s on this file where we hold about 128 Mpx/s
-whatever the content is. We are not hiding that behind the wins above; closing it is the first item
-on the [roadmap](#roadmap).
+and nothing else: 30 microseconds against 23, a third slower. Per thread the alternative's codec is
+genuinely faster than ours on low-residual content — it reaches 179 Mpx/s on this file, where we
+hold about 135 Mpx/s whatever the content is. That is one file out of four, and the smallest, but it
+is a real gap and it is not hidden behind the wins above; closing it is the first item on the
+[roadmap](#roadmap).
 
 ### What parallelism bought
 
@@ -254,13 +256,13 @@ Same harness, same corpus, `DecodeOptions::threads` set to `Some(1)` against the
 
 | file | serial | pooled | speed-up | tiles |
 |---|---|---|---|---|
-| `flat-64.heic` | 0.032 ms | 0.032 ms | 1.0x | 1 |
-| `gradient-512.heic` | 2.12 ms | 2.19 ms | 1.0x | 1 |
-| `checker-1024.heic` | 12.50 ms | 3.41 ms | 3.7x | 4 |
-| `photo-2048.heic` | 24.11 ms | 3.26 ms | 7.4x | 12 |
+| `flat-64.heic` | 0.030 ms | 0.030 ms | 1.0x | 1 |
+| `gradient-512.heic` | 2.04 ms | 2.07 ms | 1.0x | 1 |
+| `checker-1024.heic` | 12.06 ms | 3.35 ms | 3.6x | 4 |
+| `photo-2048.heic` | 23.80 ms | 2.87 ms | 8.3x | 12 |
 
 Tiles are the whole story for a grid, and the speed-up is bounded by how many there are: four tiles
-give 3.7x, twelve give 7.4x. A single-tile image has nothing to spread and lands within noise of
+give 3.6x, twelve give 8.3x. A single-tile image has nothing to spread and lands within noise of
 serial either way, which is the correct outcome — the feature must not cost anything when it cannot
 help.
 
@@ -269,13 +271,15 @@ Colour conversion parallelises separately, and on its own is worth this (`color_
 
 | size | serial | pooled | speed-up |
 |---|---|---|---|
-| 512x512 | 190 us | 108 us | 1.8x |
-| 1024x1024 | 743 us | 203 us | 3.7x |
-| 2048x1536 | 2.230 ms | 445 us | 5.0x |
-| 4032x3024 | 8.588 ms | 1.479 ms | 5.8x |
+| 512x512 | 189 us | 78.4 us | 2.4x |
+| 1024x1024 | 739 us | 151 us | 4.9x |
+| 2048x1536 | 2.219 ms | 343 us | 6.5x |
+| 4032x3024 | 8.488 ms | 1.133 ms | 7.5x |
 
-In a whole-file decode that is a smaller slice than it looks — colour is about 11% of a 64x64 decode
-and under 2% of a tiled one — but it is free, and it is what carries the single-tile shapes.
+In a whole-file decode that is a smaller slice than it looks: `sample` puts colour at about 11% of a
+64x64 decode and 7% of `gradient-512.heic`, which is why the single-tile rows above barely move even
+though this table shows a 2.4x. It is worth having anyway — it is the whole of the win on a
+decode-once, convert-many workload, and it costs nothing when it cannot help.
 
 `DecodeOptions::threads` is the knob: `None` for rayon's pool (or the pool you are already inside),
 `Some(1)` for this thread, `Some(n)` for a private pool of `n`. A private pool built inside a pool of
@@ -334,7 +338,7 @@ stays comparable with the one it replaced:
 A dash means the case did not exist before; the six that have a before are the six the old
 `color_convert` group measured, at the same size, sampling, depth and layout.
 Nothing got slower. 2048x1536 to Rgb8 went from 22.0 ms to 2.24 ms, **9.8x**, from 143 megapixels
-per second to 1.41 gigapixels, and to 3.2 gigapixels on the pool. It is now under 2% of a tiled
+per second to 1.41 gigapixels, and to 9.2 gigapixels on the pool. It is now under 2% of a tiled
 decode rather than several times the whole budget.
 
 **What is left.** The remaining cost is the interleaved narrow store. Grey output, which writes one

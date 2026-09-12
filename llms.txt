@@ -40,20 +40,21 @@ or monochrome.
 
 ## Performance
 
-Whole file in, RGB8 out, release, best of nine after a warm-up, on an Apple M3 Max (12 performance
-cores, 4 efficiency), against the AGPL `heic` crate (imazen 0.1.6, std + parallel) on the same
-corpus:
+Whole file in, RGB8 out, release, best of nine after a warm-up, five interleaved rounds with the
+lowest reported, on an Apple M3 Max (12 performance cores, 4 efficiency), against the AGPL `heic`
+crate (imazen 0.1.6, std + parallel) on the same corpus:
 
     file                pixels      heic-rs    heic (AGPL)
-    flat-64.heic        64x64       0.032 ms   0.025 ms
-    gradient-512.heic   512x512     2.19 ms    2.36 ms
-    checker-1024.heic   1024x1024   3.41 ms    5.02 ms
-    photo-2048.heic     2048x1536   3.26 ms    8.12 ms
+    flat-64.heic        64x64       0.030 ms   0.023 ms
+    gradient-512.heic   512x512     2.07 ms    2.30 ms
+    checker-1024.heic   1024x1024   3.35 ms    5.04 ms
+    photo-2048.heic     2048x1536   2.87 ms    7.78 ms
 
 heic-rs is faster on everything stored as a grid, which on macOS is anything above 512 px on a side,
-because a grid's tiles are independent coded pictures and are decoded in parallel. It is slower on
-the 64x64 single-tile file, where there is nothing to parallelise and the alternative's serial codec
-is faster than ours on low-residual content. Reproduce with
+because a grid's tiles are independent coded pictures and are decoded in parallel: 3.6x from four
+tiles, 8.3x from twelve. It is slower on the 64x64 single-tile file, by a third, where there is
+nothing to parallelise and the alternative's serial codec is faster than ours on low-residual
+content. Reproduce with
 `cargo run --release --example throughput -- <corpus-dir>`.
 
 ## Public API
