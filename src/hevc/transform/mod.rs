@@ -4,3 +4,5 @@ pub use dct::{inverse_transform, transform_skip};
 
 mod dequant;
 pub use dequant::scale;
+
+mod extent;

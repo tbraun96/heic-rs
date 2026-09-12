@@ -14,6 +14,8 @@ mod matrix;
 pub(crate) use matrix::{DCT_MATRIX, DST_MATRIX};
 use matrix::{M4, M8, M16, M32, MDST};
 
+use super::extent::extent;
+
 /// Lower bound `coeffMin` on an intermediate transform coefficient (16 bit).
 const COEFF_MIN: i32 = -32768;
 /// Upper bound `coeffMax` on an intermediate transform coefficient (16 bit).
@@ -73,32 +75,13 @@ fn mul_1d<const N: usize>(m: &[[i32; N]; N], src: &[i32; N], terms: usize) -> [i
     acc
 }
 
-/// The smallest `(rows, cols)` rectangle at the block's top-left corner that
-/// holds every non-zero coefficient.
-///
-/// Residual coding sends a last-significant-coefficient position and nothing
-/// beyond it, so for anything but the flattest content most of a 16x16 or
-/// 32x32 block is zero. Both 1-D stages sum over an index that those zeros
-/// index directly, so bounding them here removes the work rather than
-/// approximating it, and the result is bit-identical.
-fn extent<const N: usize>(b: &[i32]) -> (usize, usize) {
-    let (mut rows, mut cols) = (0usize, 0usize);
-    for (y, row) in b.chunks_exact(N).enumerate() {
-        if let Some(x) = row.iter().rposition(|&v| v != 0) {
-            rows = y + 1;
-            cols = core::cmp::max(cols, x + 1);
-        }
-    }
-    (rows, cols)
-}
-
 /// The two-dimensional inverse transform for one `N`x`N` block.
 ///
 /// `block` is row-major with `d[x][y]` at `block[y * N + x]`; it is overwritten
 /// with the residual `r[x][y]` at the same position.
 fn two_stage<const N: usize>(block: &mut [i32], m: &[[i32; N]; N], bd_shift: u32) {
     let b = &mut block[..N * N];
-    let (rows, cols) = extent::<N>(b);
+    let (rows, cols) = extent(b, N);
     // g[y][x], the clipped output of the column stage. Columns at or past
     // `cols` have an all-zero source, so they stay zero and are not computed;
     // the second stage is then told to stop summing there.
