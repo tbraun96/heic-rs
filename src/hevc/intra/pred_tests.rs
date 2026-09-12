@@ -1,8 +1,9 @@
 //! Cross-checks of the optimised predictors against a direct transcription of
 //! the clause 8.4.4.2 formulas.
 
-use super::{filter_refs, predict};
+use super::predict;
 use crate::hevc::intra::Refs;
+use crate::hevc::intra::filter_refs;
 
 const ANGLE: [i32; 33] = [
     32, 26, 21, 17, 13, 9, 5, 2, 0, -2, -5, -9, -13, -17, -21, -26, -32, -26, -21, -17, -13, -9,
