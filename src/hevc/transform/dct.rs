@@ -97,6 +97,25 @@ fn two_stage<const N: usize, const BOUNDED: bool>(
 ) {
     let b = &mut block[..N * N];
     let (rows, cols) = if BOUNDED { extent(b, N) } else { (N, N) };
+    let rnd = 1i32 << (bd_shift - 1);
+    if BOUNDED && rows == 1 {
+        // Only the first coefficient row is non-zero, so the column stage
+        // gives every row of g the same values, m[0][y] * d[x] with m[0][y]
+        // equal to m[0][0] for every y of the DCT. The row stage therefore
+        // produces one residual row, repeated down the block.
+        let mut g0 = [0i32; N];
+        for (g, &c) in g0.iter_mut().zip(b.iter()).take(cols) {
+            *g = clip_coeff((m[0][0] * c + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
+        }
+        let mut row = mul_1d::<N, true>(m, &g0, cols);
+        for v in row.iter_mut() {
+            *v = (*v + rnd) >> bd_shift;
+        }
+        for out in b.chunks_exact_mut(N) {
+            out.copy_from_slice(&row);
+        }
+        return;
+    }
     // g[y][x], the clipped output of the column stage. Columns at or past
     // `cols` have an all-zero source, so they stay zero and are not computed;
     // the second stage is then told to stop summing there.
@@ -111,8 +130,13 @@ fn two_stage<const N: usize, const BOUNDED: bool>(
             g[y][x] = clip_coeff((e[y] + (1 << (STAGE1_SHIFT - 1))) >> STAGE1_SHIFT);
         }
     }
-    let rnd = 1i32 << (bd_shift - 1);
     for y in 0..N {
+        if BOUNDED && cols == 1 {
+            // One column of g means every sample of row y is m[0][i] * g[y][0]
+            // with m[0][i] flat across the DCT's first basis row.
+            b[y * N..y * N + N].fill((m[0][0] * g[y][0] + rnd) >> bd_shift);
+            continue;
+        }
         let r = mul_1d::<N, BOUNDED>(m, &g[y], cols);
         for i in 0..N {
             b[y * N + i] = (r[i] + rnd) >> bd_shift;
@@ -179,6 +203,10 @@ pub fn transform_skip(block: &mut [i32], n: usize, bit_depth: u8, rotate: bool) 
         *v = ((*v << ts_shift) + rnd) >> bd_shift;
     }
 }
+
+#[cfg(test)]
+#[path = "dct_ref.rs"]
+mod reference;
 
 #[cfg(test)]
 #[path = "dct_tests.rs"]

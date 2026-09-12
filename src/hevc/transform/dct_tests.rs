@@ -1,99 +1,9 @@
 //! Tests for clause 8.6.4.2 / 8.6.2, comparing the monomorphised fast path
-//! against a slow reference written straight from the specification text.
+//! against the slow reference in `dct_ref.rs`.
 
+use super::reference::*;
 use super::*;
 use core::f64::consts::PI;
-
-/// xorshift32, so the tests need no `rand` dependency.
-struct Rng(u32);
-
-impl Rng {
-    fn new(seed: u32) -> Self {
-        Self(seed | 1)
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.0 = x;
-        x
-    }
-
-    /// A coefficient uniformly in `coeffMin..=coeffMax`.
-    fn coeff(&mut self) -> i32 {
-        (self.next_u32() % 65536) as i32 - 32768
-    }
-}
-
-/// The `nTbS`-point matrix, spelled out as the spec defines it.
-fn ref_matrix(n: usize, tr_type: u8) -> Vec<Vec<i64>> {
-    let mut m = vec![vec![0i64; n]; n];
-    for k in 0..n {
-        for j in 0..n {
-            m[k][j] = if tr_type == 1 {
-                DST_MATRIX[k][j] as i64
-            } else {
-                DCT_MATRIX[k * (32 / n)][j] as i64
-            };
-        }
-    }
-    m
-}
-
-/// Slow, literal transcription of clauses 8.6.4.2 and 8.6.2.
-fn ref_inverse(d: &[i32], n: usize, tr_type: u8, bit_depth: u8) -> Vec<i32> {
-    let m = ref_matrix(n, tr_type);
-    let mut g = vec![0i64; n * n];
-    for x in 0..n {
-        for i in 0..n {
-            let mut s = 0i64;
-            for j in 0..n {
-                s += m[j][i] * d[j * n + x] as i64;
-            }
-            let v = (s + 64) >> 7;
-            g[i * n + x] = v.clamp(-32768, 32767);
-        }
-    }
-    let bd = 20i64 - bit_depth as i64;
-    let mut r = vec![0i32; n * n];
-    for y in 0..n {
-        for i in 0..n {
-            let mut s = 0i64;
-            for j in 0..n {
-                s += m[j][i] * g[y * n + j];
-            }
-            r[y * n + i] = ((s + (1 << (bd - 1))) >> bd) as i32;
-        }
-    }
-    r
-}
-
-/// Slow, literal transcription of the transform-skip path of clause 8.6.2.
-fn ref_skip(d: &[i32], n: usize, bit_depth: u8, rotate: bool) -> Vec<i32> {
-    let ts = 5 + n.trailing_zeros() as i64;
-    let bd = 20i64 - bit_depth as i64;
-    let mut r = vec![0i32; n * n];
-    for y in 0..n {
-        for x in 0..n {
-            let s: i64 = if rotate {
-                d[(n - 1 - y) * n + (n - 1 - x)] as i64
-            } else {
-                d[y * n + x] as i64
-            };
-            r[y * n + x] = (((s << ts) + (1 << (bd - 1))) >> bd) as i32;
-        }
-    }
-    r
-}
-
-fn check(d: &[i32], n: usize, tr_type: u8, bit_depth: u8, what: &str) {
-    let expected = ref_inverse(d, n, tr_type, bit_depth);
-    let mut got = d.to_vec();
-    inverse_transform(&mut got, n, tr_type, bit_depth);
-    assert_eq!(got, expected, "{what}: n={n} tr={tr_type} bd={bit_depth}");
-}
 
 #[test]
 fn fast_path_matches_reference_on_random_blocks() {
@@ -130,6 +40,31 @@ fn fast_path_matches_reference_on_edge_blocks() {
                 let mut hi = vec![0i32; n * n];
                 hi[n * n - 1] = -32768;
                 check(&hi, n, tr_type, bit_depth, "highest_freq");
+            }
+        }
+    }
+}
+
+#[test]
+fn first_row_only_and_first_column_only_blocks_match_the_reference() {
+    // The collapsed paths of `two_stage` rest on the DCT's flat first basis
+    // row; this pins them to the literal transcription for every size.
+    let mut rng = Rng::new(0x0BAD_CAFE);
+    for &n in &[8usize, 16, 32] {
+        for &bit_depth in &[8u8, 10] {
+            for _ in 0..40 {
+                let cols = 1 + (rng.next_u32() as usize % n);
+                let mut row_only = vec![0i32; n * n];
+                for v in row_only.iter_mut().take(cols) {
+                    *v = rng.coeff();
+                }
+                check(&row_only, n, 0, bit_depth, "first_row_only");
+                let rows = 1 + (rng.next_u32() as usize % n);
+                let mut col_only = vec![0i32; n * n];
+                for y in 0..rows {
+                    col_only[y * n] = rng.coeff();
+                }
+                check(&col_only, n, 0, bit_depth, "first_column_only");
             }
         }
     }
