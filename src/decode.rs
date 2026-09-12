@@ -25,6 +25,15 @@ use crate::transform;
 /// this decoder does not implement comes back as [`Error::Unsupported`] naming
 /// that tool.
 pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
+    // One thread pool for the whole decode, not one per stage. Inside, the
+    // caller's choice has already been honoured, so `threads` there means
+    // "the pool we are in" or "this thread" and nothing else.
+    parallel::scope(options.threads, |threads| run(bytes, options, threads))
+}
+
+/// The decode itself, already inside whatever thread pool the caller asked
+/// for.
+fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<Image> {
     let ctx = Context::open(bytes)?;
     let id = ctx.meta.primary;
     let p = ctx.props(id)?;
@@ -41,17 +50,10 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     let (tw, th) = transform::transformed_size(cw, ch, &p.transforms)?;
     check_pixels(tw, th, limit)?;
 
-    let frame = decode_item(&ctx, id, limit, options.threads)?;
-    let alpha = alpha_frame(&ctx, id, options, limit)?;
+    let frame = decode_item(&ctx, id, limit, threads)?;
+    let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
     let nclx = p.nclx.unwrap_or_default();
-    let image = color::convert(
-        &frame,
-        alpha.as_ref(),
-        nclx,
-        options.layout,
-        limit,
-        options.threads,
-    )?;
+    let image = color::convert(&frame, alpha.as_ref(), nclx, options.layout, limit, threads)?;
     if options.apply_transforms {
         transform::apply_all(image, &p.transforms)
     } else {
@@ -98,6 +100,7 @@ fn alpha_frame(
     id: u32,
     options: &DecodeOptions,
     limit: u64,
+    threads: Option<usize>,
 ) -> Result<Option<Frame>> {
     if !options.decode_alpha || !options.layout.has_alpha() {
         return Ok(None);
@@ -105,7 +108,7 @@ fn alpha_frame(
     let Some(aux) = ctx.alpha_item(id)? else {
         return Ok(None);
     };
-    Ok(Some(decode_item(ctx, aux, limit, options.threads)?))
+    Ok(Some(decode_item(ctx, aux, limit, threads)?))
 }
 
 /// The colour description that will be used for an item, including the

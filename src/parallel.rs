@@ -16,9 +16,10 @@ use crate::error::Result;
 
 /// How many threads a caller asked for, and what that means here.
 ///
-/// `None` is rayon's global pool, which is what almost every caller wants.
-/// `Some(1)` is this thread. `Some(n)` is a private pool of `n` threads, built
-/// for the call and dropped at the end of it.
+/// `None` is rayon's global pool, or the pool the call is already inside,
+/// which is what almost every caller wants. `Some(1)` is this thread.
+/// `Some(n)` is a private pool of `n` threads, built once per decode by
+/// [`scope`] and dropped at the end of it.
 pub(crate) type Threads = Option<usize>;
 
 /// True when `threads` asks for the serial path. A build without the feature
@@ -27,6 +28,27 @@ pub(crate) type Threads = Option<usize>;
 #[inline]
 const fn is_serial(threads: Threads) -> bool {
     matches!(threads, Some(0 | 1))
+}
+
+/// Run a whole decode under the caller's thread choice, and tell it what that
+/// choice means from the inside.
+///
+/// A caller who names a count gets **one** private pool for the entire decode
+/// rather than one per stage, and inside it the choice reduces to `None` —
+/// "the pool we are already in". A pool this build cannot create is not a
+/// reason to refuse an image, so that case falls back to the serial path,
+/// which is correct if slower, rather than to a pool the caller did not ask
+/// for.
+pub(crate) fn scope<R: Send>(threads: Threads, body: impl FnOnce(Threads) -> R + Send) -> R {
+    #[cfg(feature = "parallel")]
+    if matches!(threads, Some(n) if n > 1) {
+        let n = threads.unwrap_or(1);
+        return match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
+            Ok(pool) => pool.install(|| body(None)),
+            Err(_) => body(Some(1)),
+        };
+    }
+    body(threads)
 }
 
 /// Apply `f` to every item, collecting into a `Vec` in the original order.
@@ -42,7 +64,7 @@ where
     #[cfg(feature = "parallel")]
     if !is_serial(threads) {
         use rayon::prelude::*;
-        return in_pool(threads, || items.par_iter().map(&f).collect());
+        return items.par_iter().map(&f).collect();
     }
     let _ = threads;
     items.iter().map(f).collect()
@@ -67,28 +89,10 @@ pub(crate) fn for_each_band<F>(
     if !is_serial(threads) && rows_per_band > 0 && row_bytes > 0 {
         use rayon::prelude::*;
         let band = rows_per_band * row_bytes;
-        in_pool(threads, || {
-            out.par_chunks_mut(band)
-                .enumerate()
-                .for_each(|(i, dst)| f(i * rows_per_band, dst));
-        });
+        out.par_chunks_mut(band)
+            .enumerate()
+            .for_each(|(i, dst)| f(i * rows_per_band, dst));
         return;
     }
     f(0, out);
-}
-
-/// Run `body` on the caller's thread pool, or on a private one when the caller
-/// named a size.
-#[cfg(feature = "parallel")]
-fn in_pool<R: Send>(threads: Threads, body: impl FnOnce() -> R + Send) -> R {
-    match threads {
-        // The global pool, or the pool this call is already inside.
-        None => body(),
-        Some(n) => match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
-            Ok(pool) => pool.install(body),
-            // A pool this build cannot create is not a reason to refuse the
-            // image; the work is correct on one thread.
-            Err(_) => body(),
-        },
-    }
 }
