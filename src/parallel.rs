@@ -41,12 +41,14 @@ const fn is_serial(threads: Threads) -> bool {
 /// for.
 pub(crate) fn scope<R: Send>(threads: Threads, body: impl FnOnce(Threads) -> R + Send) -> R {
     #[cfg(feature = "parallel")]
-    if matches!(threads, Some(n) if n > 1) {
-        let n = threads.unwrap_or(1);
-        return match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
-            Ok(pool) => pool.install(|| body(None)),
-            Err(_) => body(Some(1)),
-        };
+    match threads {
+        Some(n) if n > 1 => {
+            return match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
+                Ok(pool) => pool.install(|| body(None)),
+                Err(_) => body(Some(1)),
+            };
+        }
+        _ => {}
     }
     body(threads)
 }
