@@ -20,3 +20,11 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    ignore:
+      # `dtolnay/rust-toolchain@1.85` names the Rust version this crate promises to build on --
+      # its declared `rust-version` -- not a version of the action. Dependabot reads the ref as
+      # an action version and "upgrades" it to whatever Rust has most recently released, which
+      # pins the MSRV job to a toolchain that is not the MSRV and, when the number does not
+      # exist yet, to no toolchain at all. It did exactly that in PR #2 (1.85 -> 1.120). The
+      # MSRV moves when Cargo.toml's rust-version moves, by hand, in the same commit.
+      - dependency-name: "dtolnay/rust-toolchain"
