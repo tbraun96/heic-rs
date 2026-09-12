@@ -199,7 +199,8 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 ## Performance
 
 **`heic-rs` has no end-to-end decode numbers of its own yet**, because the HEVC decoder has not
-landed. Publishing a throughput figure for a decoder that returns `Error::Unsupported` would be
+landed. The container, compositing and colour figures below are real and measured; only the
+end-to-end number is missing. Publishing a throughput figure for a decoder that returns `Error::Unsupported` would be
 dishonest. Our own numbers go here once the decoder lands.
 
 For context on the target, here is a measured baseline from the AGPL alternative (`heic` crate by
@@ -224,11 +225,32 @@ What we can measure today is the container half. The benches are criterion:
 cargo bench
 ```
 
-Three groups, all of which exercise code that is finished:
+Three groups, all of which exercise code that is finished. Measured on an Apple M-series Mac,
+release build, criterion's median of a three-second measurement window:
 
-- `container_parse` — ISOBMFF box walk, `meta` parsing, item and property resolution.
-- `grid_compose` — grid derivation and tile compositing into the output buffer.
-- `color_convert` — YUV to RGB conversion and chroma upsampling.
+| group | case | median |
+|---|---|---|
+| `container_parse` | `flat-64.heic` (single item) | 544 ns |
+| `container_parse` | `checker-1024.heic` (2x2 grid) | 870 ns |
+| `container_parse` | `photo-2048.heic` (3x4 grid, 13 items) | 1.47 us |
+| `grid_compose` | 2x2 tiles into 1024x1024 | 89.6 us |
+| `grid_compose` | 3x4 tiles into 2048x1536 | 348 us |
+| `grid_compose` | 6x8 tiles into 4032x3024 (the iPhone shape) | 2.71 ms |
+| `color_convert` | 512x512 to Rgb8 | 1.84 ms |
+| `color_convert` | 512x512 to Rgba8 | 1.94 ms |
+| `color_convert` | 2048x1536 to Rgb8 | 22.1 ms |
+| `color_convert` | 2048x1536 to Rgba8 | 23.3 ms |
+
+Reading the container is free: under two microseconds for a thirteen-item file, so probing a
+directory of photographs costs nothing. Compositing runs at about 4.5 gigapixels per second.
+
+**Colour conversion is the slow part and we are not going to pretend otherwise.** At 2048x1536 it
+takes 22 ms, about 140 megapixels per second, which is more than the AGPL crate spends decoding the
+entire file. Two reasons, both fixable and neither yet fixed: `upsample::plane` materialises two
+full-resolution chroma planes before the matrix runs, and the matrix itself is scalar `f32` with one
+bounds-checked index per sample. A fused per-pixel chroma fetch and an integer fixed-point matrix
+are the obvious next steps, and they are on the roadmap rather than in the code. The filter lives in
+one small module precisely so that it can be replaced without disturbing anything else.
 
 ## Correctness
 
@@ -278,9 +300,12 @@ Not supported, and reported as `Error::Unsupported` with a message naming the re
 1. Land the HEVC still-picture decoder as the `hevc` module, replacing the `Unsupported` seam in
    `decode()`.
 2. Publish end-to-end decode benchmarks for this crate, on the same corpus as the baseline above.
-3. Run the fuzz targets described in [SECURITY.md](SECURITY.md) and fix whatever they find.
-4. Alpha (`auxC`) decoding end to end, once the codec is in place.
-5. Consider `iovl` overlay derivation and 12-bit samples, in that order.
+3. Make colour conversion fast: fuse the chroma fetch into the matrix loop instead of
+   materialising two full-resolution planes, and move the matrix to integer fixed point. The
+   benchmark above says this is the crate's slowest finished code by a wide margin.
+4. Run the fuzz targets described in [SECURITY.md](SECURITY.md) and fix whatever they find.
+5. Alpha (`auxC`) decoding end to end, once the codec is in place.
+6. Consider `iovl` overlay derivation and 12-bit samples, in that order.
 
 Encoding is not on the roadmap.
 
