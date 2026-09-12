@@ -182,12 +182,11 @@ impl<'a> Cabac<'a> {
     pub fn bypass(&mut self) -> u32 {
         self.shift_one();
         let scaled = self.range << 7;
-        if self.value >= scaled {
-            self.value -= scaled;
-            1
-        } else {
-            0
-        }
+        // Bypass bins are equiprobable, so a branch here mispredicts half the
+        // time; a mask does the conditional subtraction instead.
+        let bit = u32::from(self.value >= scaled);
+        self.value -= scaled & bit.wrapping_neg();
+        bit
     }
 
     /// Decodes `n` bypass bins as an unsigned integer, most significant first.

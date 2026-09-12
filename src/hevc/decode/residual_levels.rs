@@ -55,12 +55,10 @@ pub fn decode_levels(
         gt2 = d.cab.decision(ctx) != 0;
     }
     let hide = d.pps.sign_data_hiding && sign_hidden;
-    let mut signs = 0u16;
-    for k in 0..num {
-        if !(hide && k == num - 1) {
-            signs |= (d.cab.bypass() as u16) << k;
-        }
-    }
+    // The sign flags come as one run of bypass bins, `sig[0]`'s first, with
+    // the hidden one (the lowest position) simply absent from the end.
+    let coded_signs = num - usize::from(hide);
+    let signs = d.cab.bypass_bits(coded_signs as u32);
     let mut rice = if d.sps.persistent_rice {
         (d.stat_coeff[sb_type] / 4) as u32
     } else {
@@ -72,8 +70,7 @@ pub fn decode_levels(
     let n = 1usize << log2_size;
     for (k, &m) in sig.iter().enumerate() {
         let m = m as usize & 15;
-        let base_level =
-            1 + i32::from((gt1 >> k) & 1 != 0) + i32::from(k == last_gt1 && gt2);
+        let base_level = 1 + i32::from((gt1 >> k) & 1 != 0) + i32::from(k == last_gt1 && gt2);
         let threshold = if k < 8 {
             if k == last_gt1 { 3 } else { 2 }
         } else {
@@ -95,7 +92,7 @@ pub fn decode_levels(
         }
         sum_abs += level;
         let mut v = level;
-        if (signs >> k) & 1 != 0 {
+        if k < coded_signs && (signs >> (coded_signs - 1 - k)) & 1 != 0 {
             v = -v;
         }
         if hide && k == num - 1 && sum_abs % 2 == 1 {

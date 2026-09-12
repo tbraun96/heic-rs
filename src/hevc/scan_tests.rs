@@ -10,7 +10,11 @@ fn scan_pos_inverts_every_scan() {
             let s = scan_order(log2, idx);
             for (i, p) in s[..n * n].iter().enumerate() {
                 let (x, y) = (p[0] as usize, p[1] as usize);
-                assert_eq!(scan_pos(log2, idx, x, y), i, "scan {idx} size {n} at ({x}, {y})");
+                assert_eq!(
+                    scan_pos(log2, idx, x, y),
+                    i,
+                    "scan {idx} size {n} at ({x}, {y})"
+                );
             }
         }
     }
@@ -18,9 +22,9 @@ fn scan_pos_inverts_every_scan() {
 
 #[test]
 fn sub_raster_is_the_sub_block_scan_in_raster_form() {
-    for idx in 0..3usize {
+    for (idx, raster) in SUB_RASTER.iter().enumerate() {
         for (m, p) in sub_scan(idx)[..16].iter().enumerate() {
-            assert_eq!(SUB_RASTER[idx][m], (p[1] << 2) | p[0], "scan {idx} position {m}");
+            assert_eq!(raster[m], (p[1] << 2) | p[0], "scan {idx} position {m}");
         }
     }
 }
