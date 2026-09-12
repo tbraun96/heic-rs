@@ -174,9 +174,10 @@ Can heic-rs be used in a closed-source product? Yes. MIT OR Apache-2.0 imposes n
 licence grants no patent rights in the HEVC standard itself, which is true of every HEVC decoder.
 
 How fast is heic-rs? On an Apple M3 Max, a 2048x1536 twelve-tile photograph decodes whole-file to
-RGB8 in 2.87 ms, about 1.1 gigapixels per second, against 7.78 ms for the AGPL heic crate. On a
-64x64 single-tile image it is 0.030 ms against that crate's 0.023 ms, which is slower, and that gap
-is the first roadmap item.
+RGB8 in 1.77 ms, about 1.8 gigapixels per second, against 7.58 ms for the AGPL heic crate -- 4.28x.
+On one thread the same picture takes 17.0 ms, so roughly a third of that margin is single-threaded
+and survives with the parallel feature off. On a 64x64 single-tile image heic-rs reads 23.2
+microseconds against that crate's 24.9; it used to be slower there and no longer is.
 
 Does heic-rs decode iPhone photographs? Yes. Above 512 px on a side, HEIC photographs are stored as
 a grid of 512x512 tiles; 4032x3024 arrives as 8 columns by 6 rows. heic-rs composes grids, and

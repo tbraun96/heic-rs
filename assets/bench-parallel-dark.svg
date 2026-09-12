@@ -9,37 +9,37 @@
 <text x="24" y="116" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="13.5" font-weight="500" fill="#F4F2F9">flat-64.heic</text>
 <text x="24" y="134" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif" font-size="12" fill="#9A94AE">1 tile</text>
 <rect x="250" y="98" width="470" height="20" rx="5" fill="#17141F"/>
-<rect x="250" y="98" width="470" height="20" rx="5" fill="#22C993"/>
-<text x="711" y="112" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">0.030 ms</text>
+<rect x="250" y="98" width="466" height="20" rx="5" fill="#22C993"/>
+<text x="707" y="112" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">0.023 ms</text>
 <rect x="250" y="124" width="470" height="20" rx="5" fill="#17141F"/>
 <rect x="250" y="124" width="470" height="20" rx="5" fill="#3B3549"/>
-<text x="711" y="138" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">0.030 ms</text>
+<text x="711" y="138" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">0.023 ms</text>
 <text x="876" y="126" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">1.0×</text>
 <text x="24" y="192" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="13.5" font-weight="500" fill="#F4F2F9">gradient-512.heic</text>
 <text x="24" y="210" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif" font-size="12" fill="#9A94AE">1 tile</text>
 <rect x="250" y="174" width="470" height="20" rx="5" fill="#17141F"/>
 <rect x="250" y="174" width="470" height="20" rx="5" fill="#22C993"/>
-<text x="711" y="188" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">2.07 ms</text>
+<text x="711" y="188" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">1.46 ms</text>
 <rect x="250" y="200" width="470" height="20" rx="5" fill="#17141F"/>
-<rect x="250" y="200" width="463" height="20" rx="5" fill="#3B3549"/>
-<text x="704" y="214" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">2.04 ms</text>
+<rect x="250" y="200" width="464" height="20" rx="5" fill="#3B3549"/>
+<text x="705" y="214" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">1.44 ms</text>
 <text x="876" y="202" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">1.0×</text>
 <text x="24" y="268" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="13.5" font-weight="500" fill="#F4F2F9">checker-1024.heic</text>
 <text x="24" y="286" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif" font-size="12" fill="#9A94AE">4 tiles</text>
 <rect x="250" y="250" width="470" height="20" rx="5" fill="#17141F"/>
-<rect x="250" y="250" width="131" height="20" rx="5" fill="#22C993"/>
-<text x="372" y="264" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">3.35 ms</text>
+<rect x="250" y="250" width="129" height="20" rx="5" fill="#22C993"/>
+<text x="370" y="264" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#0F0D14" text-anchor="end">2.67 ms</text>
 <rect x="250" y="276" width="470" height="20" rx="5" fill="#17141F"/>
 <rect x="250" y="276" width="470" height="20" rx="5" fill="#3B3549"/>
-<text x="711" y="290" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">12.06 ms</text>
-<text x="876" y="278" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">3.6×</text>
+<text x="711" y="290" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">9.76 ms</text>
+<text x="876" y="278" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">3.7×</text>
 <text x="24" y="344" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="13.5" font-weight="500" fill="#F4F2F9">photo-2048.heic</text>
 <text x="24" y="362" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif" font-size="12" fill="#9A94AE">12 tiles</text>
 <rect x="250" y="326" width="470" height="20" rx="5" fill="#17141F"/>
-<rect x="250" y="326" width="57" height="20" rx="5" fill="#22C993"/>
-<text x="316" y="340" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#9A94AE" text-anchor="start">2.87 ms</text>
+<rect x="250" y="326" width="51" height="20" rx="5" fill="#22C993"/>
+<text x="310" y="340" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#9A94AE" text-anchor="start">1.83 ms</text>
 <rect x="250" y="352" width="470" height="20" rx="5" fill="#17141F"/>
 <rect x="250" y="352" width="470" height="20" rx="5" fill="#3B3549"/>
-<text x="711" y="366" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">23.80 ms</text>
-<text x="876" y="354" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">8.3×</text>
+<text x="711" y="366" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="12.5" font-weight="600" fill="#F4F2F9" text-anchor="end">17.00 ms</text>
+<text x="876" y="354" font-family="ui-monospace, SFMono-Regular, 'IBM Plex Mono', Menlo, monospace" font-size="17" font-weight="700" fill="#22C993" text-anchor="end">9.3×</text>
 </svg>

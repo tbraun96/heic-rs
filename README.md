@@ -10,7 +10,7 @@
 **The pure-Rust HEIC / HEIF image decoder.**
 
 No C toolchain. No `unsafe`. `no_std`-friendly, wasm-ready, MIT OR Apache-2.0 —
-and **2.71× faster** than the AGPL alternative on a real photograph.
+and **4.28× faster** than the AGPL alternative on a real photograph.
 
 [![crates.io](https://img.shields.io/crates/v/heic-rs.svg?style=flat-square&color=12B981)](https://crates.io/crates/heic-rs)
 [![docs.rs](https://img.shields.io/docsrs/heic-rs?style=flat-square)](https://docs.rs/heic-rs)
@@ -58,11 +58,12 @@ are below; nothing here is extrapolated.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/bench-decode-dark.svg">
-  <img src="assets/bench-decode.svg" alt="Decode time against the AGPL heic crate: flat-64 0.030 ms against 0.023 ms (1.30x slower), gradient-512 2.07 against 2.30 ms (1.11x faster), checker-1024 3.35 against 5.04 ms (1.50x faster), photo-2048 2.87 against 7.78 ms (2.71x faster)" width="100%">
+  <img src="assets/bench-decode.svg" alt="Decode time against the AGPL heic crate: flat-64 0.023 ms against 0.025 ms (1.07x faster), gradient-512 1.42 against 2.30 ms (1.62x faster), checker-1024 2.60 against 4.94 ms (1.90x faster), photo-2048 1.77 against 7.58 ms (4.28x faster)" width="100%">
 </picture>
 
 A photograph is not one coded picture; it is a grid of 512×512 tiles, and the tiles are independent.
-`photo-2048.heic` is twelve of them, and decoding twelve at once is where the 2.71× comes from:
+`photo-2048.heic` is twelve of them, and decoding twelve at once is most of where the 4.28× comes
+from:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/bench-parallel-dark.svg">
@@ -308,24 +309,28 @@ its README recommends.
 
 | file | pixels | `heic-rs` | `heic` (AGPL) | ratio | throughput |
 |---|---|---|---|---|---|
-| `flat-64.heic` | 64x64 | 0.030 ms | **0.023 ms** | 0.75x | 135 against 179 Mpx/s |
-| `gradient-512.heic` | 512x512 | **2.07 ms** | 2.30 ms | 1.11x | 127 against 114 Mpx/s |
-| `checker-1024.heic` | 1024x1024 | **3.35 ms** | 5.04 ms | 1.50x | 313 against 208 Mpx/s |
-| `photo-2048.heic` | 2048x1536 | **2.87 ms** | 7.78 ms | 2.71x | 1096 against 404 Mpx/s |
+| `flat-64.heic` | 64x64 | **0.023 ms** | 0.025 ms | 1.07x | 177 against 165 Mpx/s |
+| `gradient-512.heic` | 512x512 | **1.42 ms** | 2.30 ms | 1.62x | 185 against 114 Mpx/s |
+| `checker-1024.heic` | 1024x1024 | **2.60 ms** | 4.94 ms | 1.90x | 403 against 212 Mpx/s |
+| `photo-2048.heic` | 2048x1536 | **1.77 ms** | 7.58 ms | 4.28x | 1777 against 415 Mpx/s |
 
 Bold is the faster of the two.
 
-**Where we win, and why.** On anything stored as a grid — which on macOS is anything above 512 px on
-a side, so every photograph — the tiles are independent coded pictures and we decode them at the same
-time. `photo-2048.heic` is twelve 512x512 tiles, and that is where the 2.7x comes from.
+**Where we win, and why.** Two separate things, and it is worth keeping them apart. On anything
+stored as a grid — which on macOS is anything above 512 px on a side, so every photograph — the tiles
+are independent coded pictures and we decode them at the same time; `photo-2048.heic` is twelve
+512x512 tiles. But the serial decoder is also faster now: that same picture takes 17.0 ms on one
+thread, against 23.8 ms before the entropy and reconstruction work, so roughly a third of the 4.28x
+is single-threaded and would survive with the `parallel` feature switched off.
 
-**Where we lose, and why.** `flat-64.heic` is 64x64, a single coded picture, 4096 pixels. There is no
-grid to spread and the colour pass is over in three microseconds, so the number is the serial codec
-and nothing else: 30 microseconds against 23, a third slower. Per thread the alternative's codec is
-genuinely faster than ours on low-residual content — it reaches 179 Mpx/s on this file, where we
-hold about 135 Mpx/s whatever the content is. That is one file out of four, and the smallest, but it
-is a real gap and it is not hidden behind the wins above; closing it is the first item on the
-[roadmap](#roadmap).
+**The case we used to lose.** `flat-64.heic` is 64x64, a single coded picture, 4096 pixels: no grid
+to spread, and the colour pass is over in three microseconds, so the number is the serial codec and
+nothing else. It read 30 microseconds against 23 — a third slower — and that was the first item on
+the roadmap. It now reads **23.2 against 24.9**. What closed it was not one change: finding the last
+significant coefficient by table lookup instead of walking the scan backwards, bounding
+dequantisation by the extent of the coefficients that exist, gathering intra reference samples once
+per block instead of per sample, and not waking a thread pool for a picture too small to pay for it.
+The margin is thin and it is one file; it is reported here rather than rounded away.
 
 ### What parallelism bought
 
@@ -335,30 +340,37 @@ Same harness, same corpus, `DecodeOptions::threads` set to `Some(1)` against the
 
 | file | serial | pooled | speed-up | tiles |
 |---|---|---|---|---|
-| `flat-64.heic` | 0.030 ms | 0.030 ms | 1.0x | 1 |
-| `gradient-512.heic` | 2.04 ms | 2.07 ms | 1.0x | 1 |
-| `checker-1024.heic` | 12.06 ms | 3.35 ms | 3.6x | 4 |
-| `photo-2048.heic` | 23.80 ms | 2.87 ms | 8.3x | 12 |
+| `flat-64.heic` | 0.023 ms | 0.023 ms | 1.0x | 1 |
+| `gradient-512.heic` | 1.44 ms | 1.46 ms | 1.0x | 1 |
+| `checker-1024.heic` | 9.76 ms | 2.67 ms | 3.7x | 4 |
+| `photo-2048.heic` | 17.00 ms | 1.83 ms | 9.3x | 12 |
 
 Tiles are the whole story for a grid, and the speed-up is bounded by how many there are: four tiles
-give 3.6x, twelve give 8.3x. A single-tile image has nothing to spread and lands within noise of
+give 3.7x, twelve give 9.3x. A single-tile image has nothing to spread and lands within noise of
 serial either way, which is the correct outcome — the feature must not cost anything when it cannot
 help.
 
 Colour conversion parallelises separately, and on its own is worth this (`color_threads` in
 `benches/decode.rs`, 4:2:0 to RGB8):
 
-| size | serial | pooled | speed-up |
-|---|---|---|---|
-| 512x512 | 189 us | 78.4 us | 2.4x |
-| 1024x1024 | 739 us | 151 us | 4.9x |
-| 2048x1536 | 2.219 ms | 343 us | 6.5x |
-| 4032x3024 | 8.488 ms | 1.133 ms | 7.5x |
+| size | serial | pooled | speed-up | pooled in a decode? |
+|---|---|---|---|---|
+| 512x512 | 189 us | 78.4 us | 2.4x | **no** — below the floor |
+| 1024x1024 | 739 us | 151 us | 4.9x | yes |
+| 2048x1536 | 2.219 ms | 343 us | 6.5x | yes |
+| 4032x3024 | 8.488 ms | 1.133 ms | 7.5x | yes |
 
-In a whole-file decode that is a smaller slice than it looks: `sample` puts colour at about 11% of a
-64x64 decode and 7% of `gradient-512.heic`, which is why the single-tile rows above barely move even
-though this table shows a 2.4x. It is worth having anyway — it is the whole of the win on a
-decode-once, convert-many workload, and it costs nothing when it cannot help.
+**The 512x512 row is why there is a floor at all, and it is the one number on this page that has to
+be read with its last column.** Measured on its own, with a pool that is already awake, spreading a
+512x512 conversion is worth 2.4x. Measured inside a real decode of a single-tile picture, it *loses*
+90 to 150 microseconds: the workers have slept through the entire codec run, and waking them costs
+more than the conversion saves. So colour below 768x768 runs serial by design, and this row records
+a speed-up the decoder deliberately declines to take. The earlier version of this table did not have
+that column and implied the opposite.
+
+In a whole-file decode colour is a smaller slice than it looks even above the floor: `sample` puts
+it at about 11% of a 64x64 decode and 7% of `gradient-512.heic`. It is worth having anyway — it is
+the whole of the win on a decode-once, convert-many workload.
 
 `DecodeOptions::threads` is the knob: `None` for rayon's pool (or the pool you are already inside),
 `Some(1)` for this thread, `Some(n)` for a private pool of `n`. A private pool built inside a pool of
@@ -383,7 +395,17 @@ was measured there; nothing is extrapolated.
 | `grid_compose` | 6x8 tiles into 4032x3024 (the iPhone shape) | 2.71 ms |
 
 Reading the container is free: under two microseconds for a thirteen-item file, so probing a
-directory of photographs costs nothing. Compositing runs at about 4.5 gigapixels per second.
+directory of photographs costs nothing.
+
+`grid_compose` is measured but **a decode no longer calls it.** Composing meant allocating a canvas
+the size of the whole picture, zeroing it, page-faulting it in, blitting every tile into it, and
+then having the colour pass read it straight back out — 256 microseconds and 14 megabytes on
+`photo-2048.heic`, for an intermediate nobody wanted. The decoder now reads tiles in place through
+`grid::Mosaic`, which answers "row *y*" by copying the segments it needs into a band's scratch
+inside the parallel work, so the canvas never exists: allocation for that picture fell from 49.2 to
+39.8 MB and the pooled decode by 14%. `compose` remains for the alpha plane and the public API, it
+is still the single definition of what a row of a grid contains, and `tests/mosaic.rs` pins the two
+to each other byte for byte on an overhanging grid.
 
 ### Colour conversion
 
@@ -576,9 +598,13 @@ If `heic-rs` is useful to you, a star on the repository is how other people find
 
 ## Roadmap
 
-1. Close the single-thread gap in the codec. Per thread, the AGPL alternative still decodes
-   photographic content faster than we do; parallelism is what puts us ahead overall, and it should
-   not have to carry the whole result. CABAC bypass batching and butterfly transforms are next.
+1. ~~Close the single-thread gap in the codec.~~ **Done.** Serial `photo-2048.heic` went from
+   23.8 ms to 17.0 ms and `flat-64.heic` from 30 to 23 microseconds, which turned the one case this
+   crate lost into a win. Bypass batching by long division was tried and reverted — bit-identical,
+   but the divide costs about what the two to five bins it replaces cost on an M3 Max. What paid
+   instead: an inverse-scan table for the last significant coefficient, dequantisation bounded by
+   the coefficient extent, const-generic intra predictors, and per-block reference gathering.
+   `state::available` and the per-transform-unit zero fill are the next two, worth about 5%.
 2. Run the fuzz targets described in [SECURITY.md](SECURITY.md) and fix whatever they find.
 3. Alpha (`auxC`) decoding end to end.
 4. Portable SIMD in `src/color/kernel.rs` once `std::simd` stabilises.
