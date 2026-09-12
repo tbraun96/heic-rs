@@ -50,7 +50,7 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
     let (tw, th) = transform::transformed_size(cw, ch, &p.transforms)?;
     check_pixels(tw, th, limit)?;
 
-    let frame = decode_item(&ctx, id, limit, threads)?;
+    let frame = decode_item(&ctx, id, &p, limit, threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
     let nclx = p.nclx.unwrap_or_default();
     let image = color::convert(&frame, alpha.as_ref(), nclx, options.layout, limit, threads)?;
@@ -63,24 +63,32 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
 
 /// Decode one item, following a `grid` derivation when there is one.
 ///
-/// A grid's tiles are independent coded pictures: nothing in one tile's
-/// bitstream refers to another, so they are decoded together when the caller
-/// allows it. The order of `frames` is the `dimg` order, which is what
-/// [`grid::compose`] places them by, so the result does not depend on the
-/// order they happened to finish in.
-fn decode_item(ctx: &Context<'_>, id: u32, limit: u64, threads: Option<usize>) -> Result<Frame> {
+/// `p` is the item's own properties, gathered once by the caller; a single
+/// coded picture is decoded straight from them rather than reading its
+/// `iprp` entry a second time. A grid's tiles are independent coded pictures:
+/// nothing in one tile's bitstream refers to another, so they are decoded
+/// together when the caller allows it. The order of `frames` is the `dimg`
+/// order, which is what [`grid::compose`] places them by, so the result does
+/// not depend on the order they happened to finish in.
+fn decode_item(
+    ctx: &Context<'_>,
+    id: u32,
+    p: &ItemProps<'_>,
+    limit: u64,
+    threads: Option<usize>,
+) -> Result<Frame> {
     match ctx.grid(id)? {
         Some((g, tiles)) => {
-            let frames = parallel::try_map(&tiles, threads, |t| decode_coded(ctx, *t))?;
+            let frames =
+                parallel::try_map(&tiles, threads, |t| decode_coded(ctx, *t, &ctx.props(*t)?))?;
             grid::compose(&g, &frames, limit)
         }
-        None => decode_coded(ctx, id),
+        None => decode_coded(ctx, id, p),
     }
 }
 
 /// Decode a single coded picture item through the codec seam.
-fn decode_coded(ctx: &Context<'_>, id: u32) -> Result<Frame> {
-    let p = ctx.props(id)?;
+fn decode_coded(ctx: &Context<'_>, id: u32, p: &ItemProps<'_>) -> Result<Frame> {
     let hvcc = p.hvcc.as_ref().ok_or(Error::MissingBox("hvcC"))?;
     let data = ctx.item_data(id)?;
     let nals = hvcc.split_nals(&data)?;
@@ -108,7 +116,8 @@ fn alpha_frame(
     let Some(aux) = ctx.alpha_item(id)? else {
         return Ok(None);
     };
-    Ok(Some(decode_item(ctx, aux, limit, threads)?))
+    let aux_props = ctx.props(aux)?;
+    Ok(Some(decode_item(ctx, aux, &aux_props, limit, threads)?))
 }
 
 /// The colour description that will be used for an item, including the
