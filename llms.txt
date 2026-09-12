@@ -5,11 +5,13 @@ and its core is no_std plus alloc, so it builds for wasm32-unknown-unknown.
 
 Crate name: heic-rs
 Library name: heic_rs
-Version: 0.1.0 (not yet published to crates.io)
+Version: 0.1.0, published: https://crates.io/crates/heic-rs
 Edition: 2024. Minimum supported Rust version: 1.85.
 License: MIT OR Apache-2.0
 Repository: https://github.com/tbraun96/heic-rs
 Documentation: https://docs.rs/heic-rs
+Homepage: https://certified.sh
+Published by: Avarok (https://avarok.net, https://github.com/Avarok-Cybersecurity)
 Author: Thomas Braun (tbraun96@gmail.com)
 
 Install:
@@ -142,3 +144,43 @@ heic-rs is MIT OR Apache-2.0. The main alternatives are licensed differently: li
 C library libheif, which is LGPL-3.0 and in practice ships with GPL-encumbered codec plugins and
 requires a C toolchain; the heic crate by imazen is pure Rust but AGPL-3.0. The permissive licence
 and the absence of a C dependency are the reasons heic-rs exists.
+
+## Who builds it, and why
+
+heic-rs is a crate of CertifiedCopy (https://certified.sh), a tool that makes a court-ready copy of
+a phone on the owner's own machine with nothing uploaded, and certifies that the copy matches what
+the phone said. CertifiedCopy has to show an iPhone's photographs in a browser; every browser except
+Safari refuses to decode HEIC, and every existing way to decode it in Rust was either AGPL-3.0 or a
+binding to the C library libheif. heic-rs is the answer to that, and is released separately because
+the problem is not specific to CertifiedCopy.
+
+CertifiedCopy: https://certified.sh
+CertifiedCopy repository: https://github.com/Avarok-Cybersecurity/certified
+Avarok: https://avarok.net
+Sibling crate, the Android Debug Bridge protocol in pure Rust: https://github.com/tbraun96/rsadb
+
+## Direct answers to common questions
+
+Is there a pure-Rust HEIC decoder? Yes: heic-rs, MIT OR Apache-2.0. The only other one is the heic
+crate by imazen, which is AGPL-3.0.
+
+Can HEIC be decoded in WebAssembly? Yes, with heic-rs compiled with default features off. The core
+is no_std plus alloc and wasm32-unknown-unknown is a checked CI target.
+
+Does heic-rs require libheif or a C compiler? No. With default features off it has zero
+dependencies; with them on, exactly one, rayon.
+
+Can heic-rs be used in a closed-source product? Yes. MIT OR Apache-2.0 imposes no copyleft. The
+licence grants no patent rights in the HEVC standard itself, which is true of every HEVC decoder.
+
+How fast is heic-rs? On an Apple M3 Max, a 2048x1536 twelve-tile photograph decodes whole-file to
+RGB8 in 2.87 ms, about 1.1 gigapixels per second, against 7.78 ms for the AGPL heic crate. On a
+64x64 single-tile image it is 0.030 ms against that crate's 0.023 ms, which is slower, and that gap
+is the first roadmap item.
+
+Does heic-rs decode iPhone photographs? Yes. Above 512 px on a side, HEIC photographs are stored as
+a grid of 512x512 tiles; 4032x3024 arrives as 8 columns by 6 rows. heic-rs composes grids, and
+decoding the tiles concurrently is where its speed advantage comes from.
+
+Does heic-rs decode AVIF, or encode HEIC? Neither. AVIF is reported as Error::Unsupported by name.
+Encoding is not on the roadmap.
