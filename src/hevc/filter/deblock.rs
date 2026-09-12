@@ -30,11 +30,43 @@ pub(super) fn clip3(lo: i32, hi: i32, v: i32) -> i32 {
     v.max(lo).min(hi)
 }
 
-/// Coordinates of sample `off` of line `i` of the segment at edge `e`, start `s`.
-#[inline]
-fn pos(ver: bool, e: usize, s: usize, i: usize, off: isize) -> (usize, usize) {
-    let t = (e as isize + off) as usize;
-    if ver { (t, s + i) } else { (s + i, t) }
+/// Where the samples of one four-line segment sit in a plane.
+///
+/// Sample `j` of line `i` is at `first + i * line + j * along`, where `j`
+/// counts from the outermost tap on the P side. Reading an edge of either
+/// direction is then the same arithmetic with different steps, so the
+/// direction never has to be re-examined per sample.
+pub(super) struct Seg {
+    first: usize,
+    along: usize,
+    line: usize,
+}
+
+impl Seg {
+    /// The segment of the edge at `e`, starting at `s`, whose filter reads
+    /// `taps` samples on each side of the edge.
+    #[inline]
+    pub(super) fn new(stride: usize, ver: bool, e: usize, s: usize, taps: usize) -> Seg {
+        if ver {
+            Seg {
+                first: s * stride + e - taps,
+                along: 1,
+                line: stride,
+            }
+        } else {
+            Seg {
+                first: (e - taps) * stride + s,
+                along: stride,
+                line: 1,
+            }
+        }
+    }
+
+    /// Plane index of sample `j` of line `i`.
+    #[inline]
+    pub(super) fn at(&self, i: usize, j: usize) -> usize {
+        self.first + i * self.line + j * self.along
+    }
 }
 
 /// True when loop filtering must leave the samples of this coding unit alone.
@@ -92,8 +124,8 @@ fn filter_line(sm: &[i32; 8], de: u8, dep: bool, deq: bool, tc: i32, max: i32) -
 
 /// Filters one four-line luma segment of the edge at `e` starting at `s`.
 fn luma_segment(pic: &mut Picture, info: &FilterInfo, ver: bool, e: usize, s: usize) {
-    let (px, py) = pos(ver, e, s, 0, -1);
-    let (qx, qy) = pos(ver, e, s, 0, 0);
+    let (px, py) = if ver { (e - 1, s) } else { (s, e - 1) };
+    let (qx, qy) = if ver { (e, s) } else { (s, e) };
     let qc = info.ctb_of(qx, qy);
     let cf = match info.ctb.get(qc) {
         Some(c) => *c,
@@ -116,11 +148,12 @@ fn luma_segment(pic: &mut Picture, info: &FilterInfo, ver: bool, e: usize, s: us
         qpl + 2 * (BS - 1) + ((cf.tc_offset_div2 as i32) << 1),
     );
     let tc = TC_TABLE[qtc as usize] * scale;
+    let seg = Seg::new(pic.y.stride, ver, e, s, 4);
+    let data = &mut pic.y.data;
     let mut sm = [[0i32; 8]; 4];
     for (i, line) in sm.iter_mut().enumerate() {
         for (j, v) in line.iter_mut().enumerate() {
-            let (x, y) = pos(ver, e, s, i, j as isize - 4);
-            *v = pic.y.at(x, y) as i32;
+            *v = data[seg.at(i, j)] as i32;
         }
     }
     let dp = |l: &[i32; 8]| (l[1] - 2 * l[2] + l[3]).abs();
@@ -144,14 +177,12 @@ fn luma_segment(pic: &mut Picture, info: &FilterInfo, ver: bool, e: usize, s: us
     let thr = (beta + (beta >> 1)) >> 3;
     let (dep, deq) = (dp0 + dp3 < thr, dq0 + dq3 < thr);
     let max = (1i32 << info.bit_depth_y) - 1;
+    // Only p2..q2 can change, and a locked side keeps its samples.
+    let (lo, hi) = (if pl { 4 } else { 1 }, if ql { 4 } else { 7 });
     for (i, line) in sm.iter().enumerate() {
         let o = filter_line(line, de, dep, deq, tc, max);
-        for (j, &v) in o.iter().enumerate().take(7).skip(1) {
-            if (j < 4 && pl) || (j >= 4 && ql) {
-                continue;
-            }
-            let (x, y) = pos(ver, e, s, i, j as isize - 4);
-            pic.y.put(x, y, v as u16);
+        for (j, &v) in o.iter().enumerate().take(hi).skip(lo) {
+            data[seg.at(i, j)] = v as u16;
         }
     }
 }
