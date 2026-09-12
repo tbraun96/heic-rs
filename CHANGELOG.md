@@ -7,8 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**0.1.0 has not been released.** The crate now decodes HEIC files to pixels end to end. No release
-date is promised here because none has been set.
+## [0.1.1] - 2026-09-11
+
+Performance. Output is bit-identical to 0.1.0 on every fixture, the API is unchanged, and the MSRV
+is unchanged: this release is worth taking and cannot break you.
+
+Measured on an Apple M3 Max against `heic` 0.1.6 (AGPL-3.0), whole file in and RGB8 out, both
+decoders alternating, ten cycles, lowest run:
+
+| file | 0.1.0 | 0.1.1 | `heic` (AGPL) |
+|---|---|---|---|
+| `flat-64.heic` | 0.030 ms | **0.023 ms** | 0.025 ms |
+| `gradient-512.heic` | 2.07 ms | **1.42 ms** | 2.30 ms |
+| `checker-1024.heic` | 3.35 ms | **2.60 ms** | 4.94 ms |
+| `photo-2048.heic` | 2.87 ms | **1.77 ms** | 7.58 ms |
+
+`flat-64.heic` is the one this crate used to lose, and it was the first item on the roadmap. It is
+now a win, and not because of threads: serial `photo-2048.heic` went from 23.8 ms to 17.0 ms, so
+roughly a third of the margin survives with the `parallel` feature switched off — which is the
+configuration WebAssembly runs in.
+
+### Changed
+
+- **Entropy path.** The last significant coefficient is found through a compile-time inverse scan
+  instead of walking the scan order backwards, which was up to 1024 steps for a 32x32 block whose
+  energy sits near DC — what a photograph looks like. The CABAC engine fetches a byte at a time,
+  renormalises with a shift, and its bin decoders are infallible; `sig_coeff_flag` contexts settle
+  once per sub-block; bypass bins decode without a data-dependent branch. 109 to 140.5 Mbin/s.
+- **Reconstruction.** Dequantisation is bounded by the extent of the coefficients that exist, 4x4
+  blocks run as a branch-free matrix product, blocks whose coefficients lie in one row or column
+  collapse, intra predictors are const-generic over the block size, reference samples are gathered
+  per minimum transform block rather than per sample, and SAO snapshots a plane only when some CTB
+  actually applies it.
+- **Container and scheduling.** A grid's tiles are read in place: `decode` no longer composes a
+  canvas the size of the picture only for the colour pass to read it straight back, which on
+  `photo-2048.heic` was 14 MB and 256 us. Peak allocation for that picture fell from 49.2 to
+  39.8 MB. The primary item's properties are gathered once instead of twice.
+- **Colour is no longer spread below 768x768.** On a single-tile decode the pool's workers have
+  slept through the whole codec run, and waking them cost 90-150 us more than the conversion saved.
+  Measured alone with a warm pool the old floor looked like a 2.4x win; measured inside a real
+  decode it was a loss. Nothing above the floor changed.
+
+### Fixed
+
+- Nothing. No defect was found in 0.1.0's output: every change here was checked bit-identical
+  against it across all nine fixtures, seven pixel layouts and three thread counts.
+
+**0.1.0 was the first release.** The crate decodes HEIC files to pixels end to end.
 
 ### Changed
 
