@@ -19,6 +19,7 @@
 
 mod fixed;
 mod kernel;
+mod source;
 
 use alloc::vec::Vec;
 
@@ -29,6 +30,7 @@ use crate::parallel;
 use crate::props::colr::Nclx;
 use fixed::{AlphaScale, Coeffs};
 use kernel::Mode;
+pub(crate) use source::Source;
 
 /// The sample depths this conversion is defined for.
 const DEPTHS: core::ops::RangeInclusive<u8> = 8..=16;
@@ -57,21 +59,42 @@ pub fn convert(
     threads: Option<usize>,
 ) -> Result<Image> {
     frame.validate()?;
-    depth_ok(frame.bit_depth)?;
-    let (w, h) = (frame.width, frame.height);
+    convert_source(
+        &Source::Frame(frame),
+        alpha,
+        nclx,
+        layout,
+        max_pixels,
+        threads,
+    )
+}
+
+/// [`convert`] for any row source: a validated frame, or a grid's tiles read
+/// in place through [`crate::grid::Mosaic`], which checked them when it was
+/// built.
+pub(crate) fn convert_source(
+    src: &Source<'_>,
+    alpha: Option<&Frame>,
+    nclx: Nclx,
+    layout: PixelLayout,
+    max_pixels: u64,
+    threads: Option<usize>,
+) -> Result<Image> {
+    depth_ok(src.bit_depth())?;
+    let (w, h) = (src.width(), src.height());
     check_pixels(w, h, max_pixels)?;
     let mut image = Image::zeroed(w, h, layout, max_pixels)?;
 
     let wide = layout.bytes_per_channel() == 2;
-    let coeffs = Coeffs::new(nclx, frame.bit_depth, wide);
-    let mode = if frame.chroma == ChromaFormat::Monochrome || layout.is_gray() {
+    let coeffs = Coeffs::new(nclx, src.bit_depth(), wide);
+    let mode = if src.chroma() == ChromaFormat::Monochrome || layout.is_gray() {
         Mode::Luma
     } else if nclx.matrix.is_identity() {
         Mode::Identity
     } else {
         Mode::Matrix
     };
-    run(frame, &coeffs, mode, &mut image, threads);
+    run(src, &coeffs, mode, &mut image, threads);
 
     if let Some(a) = alpha.filter(|_| layout.has_alpha()) {
         depth_ok(a.bit_depth)?;
@@ -99,16 +122,16 @@ fn depth_ok(depth: u8) -> Result<()> {
 
 /// Pick the loop for this layout. One instantiation per layout, chosen here
 /// and never re-examined inside a row.
-fn run(frame: &Frame, c: &Coeffs, mode: Mode, image: &mut Image, threads: Option<usize>) {
+fn run(src: &Source<'_>, c: &Coeffs, mode: Mode, image: &mut Image, threads: Option<usize>) {
     let out = &mut image.data;
     match image.layout {
-        PixelLayout::Gray8 => bands::<1, false, false>(frame, c, mode, out, threads),
-        PixelLayout::Rgb8 => bands::<3, false, false>(frame, c, mode, out, threads),
-        PixelLayout::Bgr8 => bands::<3, true, false>(frame, c, mode, out, threads),
-        PixelLayout::Rgba8 => bands::<4, false, false>(frame, c, mode, out, threads),
-        PixelLayout::Bgra8 => bands::<4, true, false>(frame, c, mode, out, threads),
-        PixelLayout::Rgb16 => bands::<6, false, true>(frame, c, mode, out, threads),
-        PixelLayout::Rgba16 => bands::<8, false, true>(frame, c, mode, out, threads),
+        PixelLayout::Gray8 => bands::<1, false, false>(src, c, mode, out, threads),
+        PixelLayout::Rgb8 => bands::<3, false, false>(src, c, mode, out, threads),
+        PixelLayout::Bgr8 => bands::<3, true, false>(src, c, mode, out, threads),
+        PixelLayout::Rgba8 => bands::<4, false, false>(src, c, mode, out, threads),
+        PixelLayout::Bgra8 => bands::<4, true, false>(src, c, mode, out, threads),
+        PixelLayout::Rgb16 => bands::<6, false, true>(src, c, mode, out, threads),
+        PixelLayout::Rgba16 => bands::<8, false, true>(src, c, mode, out, threads),
     }
 }
 
@@ -143,21 +166,22 @@ const PARALLEL_FLOOR_PIXELS: u64 = 768 * 768;
 
 /// Convert the image in row bands, on as many threads as the caller allowed.
 ///
-/// Each band gets its own pair of scratch chroma rows, since that scratch is
-/// the only mutable state a band carries between its rows.
+/// Each band gets its own scratch — the upsampled chroma rows, and a mosaic's
+/// row-assembly space — since that is the only mutable state a band carries
+/// between its rows.
 fn bands<const N: usize, const BGR: bool, const WIDE: bool>(
-    frame: &Frame,
+    src: &Source<'_>,
     c: &Coeffs,
     mode: Mode,
     out: &mut [u8],
     threads: Option<usize>,
 ) {
-    let w = frame.width as usize;
-    let scratch_len = if mode == Mode::Luma { 0 } else { 2 * w };
-    let small = u64::from(frame.width) * u64::from(frame.height) < PARALLEL_FLOOR_PIXELS;
+    let w = src.width() as usize;
+    let scratch_len = kernel::scratch_len(src, mode);
+    let small = u64::from(src.width()) * u64::from(src.height()) < PARALLEL_FLOOR_PIXELS;
     let threads = if small { Some(1) } else { threads };
     parallel::for_each_band(out, w * N, ROWS_PER_BAND, threads, |y0, dst| {
         let mut scratch: Vec<u16> = alloc::vec![0u16; scratch_len];
-        kernel::planes::<N, BGR, WIDE>(frame, c, mode, &mut scratch, dst, y0);
+        kernel::planes::<N, BGR, WIDE>(src, c, mode, &mut scratch, dst, y0);
     });
 }

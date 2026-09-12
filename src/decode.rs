@@ -5,10 +5,12 @@
 //! colour, applying transforms — in that order, and with the declared size
 //! checked against the caller's ceiling before any of it allocates.
 
-use crate::color;
+use alloc::vec::Vec;
+
+use crate::color::{self, Source};
 use crate::context::Context;
 use crate::error::{Error, Result};
-use crate::grid;
+use crate::grid::{self, Grid, Mosaic};
 use crate::hevc::{self, Frame};
 use crate::image::{DecodeOptions, Image, check_pixels};
 use crate::parallel;
@@ -50,14 +52,50 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
     let (tw, th) = transform::transformed_size(cw, ch, &p.transforms)?;
     check_pixels(tw, th, limit)?;
 
-    let frame = decode_item(&ctx, id, &p, limit, threads)?;
+    let decoded = decode_item(&ctx, id, &p, threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
     let nclx = p.nclx.unwrap_or_default();
-    let image = color::convert(&frame, alpha.as_ref(), nclx, options.layout, limit, threads)?;
+    let (layout, alpha) = (options.layout, alpha.as_ref());
+    let image = match &decoded {
+        Decoded::Picture(frame) => {
+            color::convert_source(&Source::Frame(frame), alpha, nclx, layout, limit, threads)?
+        }
+        // The tiles are read in place: a canvas would be allocated, zeroed
+        // and filled only for the colour pass to read it straight back.
+        Decoded::Tiles(g, tiles) => {
+            let mosaic = Mosaic::new(g, tiles)?;
+            color::convert_source(
+                &Source::Mosaic(&mosaic),
+                alpha,
+                nclx,
+                layout,
+                limit,
+                threads,
+            )?
+        }
+    };
     if options.apply_transforms {
         transform::apply_all(image, &p.transforms)
     } else {
         Ok(image)
+    }
+}
+
+/// What decoding an item produced.
+enum Decoded {
+    /// One coded picture, validated.
+    Picture(Frame),
+    /// A grid's tiles in `dimg` order, each validated, not yet composed.
+    Tiles(Grid, Vec<Frame>),
+}
+
+impl Decoded {
+    /// One frame, composing a grid's tiles if there are any.
+    fn into_frame(self, limit: u64) -> Result<Frame> {
+        match self {
+            Decoded::Picture(frame) => Ok(frame),
+            Decoded::Tiles(g, tiles) => grid::compose(&g, &tiles, limit),
+        }
     }
 }
 
@@ -67,23 +105,22 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
 /// coded picture is decoded straight from them rather than reading its
 /// `iprp` entry a second time. A grid's tiles are independent coded pictures:
 /// nothing in one tile's bitstream refers to another, so they are decoded
-/// together when the caller allows it. The order of `frames` is the `dimg`
-/// order, which is what [`grid::compose`] places them by, so the result does
-/// not depend on the order they happened to finish in.
+/// together when the caller allows it. The tiles come back in `dimg` order,
+/// which is what [`Mosaic`] and [`grid::compose`] place them by, so the result
+/// does not depend on the order they happened to finish in.
 fn decode_item(
     ctx: &Context<'_>,
     id: u32,
     p: &ItemProps<'_>,
-    limit: u64,
     threads: Option<usize>,
-) -> Result<Frame> {
+) -> Result<Decoded> {
     match ctx.grid(id)? {
         Some((g, tiles)) => {
             let frames =
                 parallel::try_map(&tiles, threads, |t| decode_coded(ctx, *t, &ctx.props(*t)?))?;
-            grid::compose(&g, &frames, limit)
+            Ok(Decoded::Tiles(g, frames))
         }
-        None => decode_coded(ctx, id, p),
+        None => decode_coded(ctx, id, p).map(Decoded::Picture),
     }
 }
 
@@ -117,7 +154,11 @@ fn alpha_frame(
         return Ok(None);
     };
     let aux_props = ctx.props(aux)?;
-    Ok(Some(decode_item(ctx, aux, &aux_props, limit, threads)?))
+    // The alpha kernel reads one plane, so a tiled alpha item is composed;
+    // alpha grids are rare enough that the canvas is not worth avoiding.
+    decode_item(ctx, aux, &aux_props, threads)?
+        .into_frame(limit)
+        .map(Some)
 }
 
 /// The colour description that will be used for an item, including the
