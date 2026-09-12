@@ -207,6 +207,7 @@ pub fn mono_frame(w: u32, h: u32, f: impl Fn(u32, u32) -> u16) -> heic_rs::hevc:
     }
 }
 
+pub mod compare;
 pub mod inflate;
 pub mod png;
 pub mod reference;

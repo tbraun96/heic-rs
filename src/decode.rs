@@ -1,9 +1,9 @@
 //! [`decode`]: container to pixels.
 //!
-//! Every step but one is implemented here and tested: resolving the primary
-//! item, splitting NAL units, composing a grid, converting colour, applying
-//! transforms. The one step that is not is the call into
-//! [`crate::hevc::decode_still`], which is still a placeholder.
+//! Resolving the primary item, splitting NAL units, decoding each coded
+//! picture through [`crate::hevc::decode_still`], composing a grid, converting
+//! colour, applying transforms — in that order, and with the declared size
+//! checked against the caller's ceiling before any of it allocates.
 
 use alloc::vec::Vec;
 
@@ -21,9 +21,10 @@ use crate::transform;
 ///
 /// # Errors
 ///
-/// Returns [`Error::Unsupported`] at the codec seam until the HEVC decoder
-/// lands. Every container-level failure is reported before that point, so a
-/// malformed file still gets a precise error today.
+/// Container-level failures are reported before anything is decoded, so a
+/// malformed file costs nothing. A file whose bitstream uses a coding tool
+/// this decoder does not implement comes back as [`Error::Unsupported`] naming
+/// that tool.
 pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     let ctx = Context::open(bytes)?;
     let id = ctx.meta.primary;

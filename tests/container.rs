@@ -146,9 +146,13 @@ fn strict_mode_refuses_an_unknown_essential_property() {
     let bytes = with_offset(bytes, payload.len() as u32);
     let lenient = heic_rs::DecodeOptions::default();
     let strict = heic_rs::DecodeOptions::default().with_strict(true);
-    // Lenient mode gets as far as the codec seam; strict mode stops earlier.
-    let e = heic_rs::decode(&bytes, &lenient).expect_err("no decoder");
-    assert!(heic_rs::hevc::is_not_linked(&e), "got {e}");
+    // Lenient mode carries the unknown property past the seam and fails in
+    // the codec on this hand-built payload; strict mode stops before it.
+    let e = heic_rs::decode(&bytes, &lenient).expect_err("not a real bitstream");
+    assert!(
+        !matches!(e, Error::Unsupported(m) if m.contains("essential")),
+        "lenient mode should not have refused the property: {e}"
+    );
     let e = heic_rs::decode(&bytes, &strict).expect_err("an unknown essential property");
     assert!(
         matches!(e, Error::Unsupported(m) if m.contains("essential")),

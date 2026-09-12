@@ -20,6 +20,8 @@ path = "src/lib.rs"
 [features]
 default = ["std"]
 std = []
+# Exposes the decoder's internal stages to `benches/`. Not public API.
+bench = []
 
 [dependencies]
 

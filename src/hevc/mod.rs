@@ -1,176 +1,104 @@
-//! The seam between the HEIF container and the HEVC still-picture decoder.
+//! The HEVC (ITU-T H.265) still-picture intra decoder.
 //!
-//! Everything above this module — box parsing, item resolution, grid
-//! compositing, transforms, colour conversion — is complete and tested
-//! without a working codec, because the codec is reached only through the two
-//! functions below.
+//! This module decodes one intra picture — Main, Main 10 or Main Still
+//! Picture, 4:2:0, 4:2:2, 4:4:4 or monochrome, 8 or 10 bits — from the
+//! parameter sets and coded slices of an IRAP access unit. Like every other
+//! module in the crate it performs no I/O: [`decode_still`] takes bytes and
+//! returns samples. Inter prediction, P and B slices and multi-picture
+//! sequences are refused with [`Error::Unsupported`], naming the tool that was
+//! asked for.
 //!
-//! # Status
-//!
-//! The real decoder is being written as a standalone crate and lands next, as
-//! the body of this module. Until then [`decode_still`] and [`probe`] return
-//! [`Error::Unsupported`], and `heic_rs::decode` therefore fails at the seam
-//! rather than silently returning wrong pixels. `heic_rs::probe` does not go
-//! through here at all when the file carries `ispe`, which every conformant
-//! HEIF file does, so probing works today.
+//! [`Error::Unsupported`]: crate::Error::Unsupported
 //!
 //! # Contract
 //!
 //! `parameter_sets` are the VPS, SPS and PPS NAL units taken from the item's
 //! `hvcC` property, in that order, each without a length prefix or start code.
 //! `slices` are the remaining NAL units of the item's data, already split on
-//! their length prefixes. Both borrow from the caller; the decoder must not
+//! their length prefixes. Both borrow from the caller; the decoder does not
 //! assume they outlive the call.
+//!
+//! # Errors
+//!
+//! The decoder has its own, narrower notion of failure, defined in the private
+//! `error` submodule. It never reaches a caller: it is converted into
+//! [`crate::Error`] at this seam, carrying the same message, so that a caller
+//! of [`crate::decode()`] matches on exactly one error type.
 
-use alloc::vec::Vec;
+mod bits;
+mod cabac;
+mod decode;
+mod error;
+mod filter;
+mod frame;
+mod intra;
+mod nal;
+mod picture;
+mod ps;
+mod scan;
+mod slice;
+mod transform;
 
-use crate::error::{Error, Result};
+#[cfg(any(test, feature = "bench"))]
+#[doc(hidden)]
+pub mod synth;
 
-/// The message returned by every entry point until the decoder lands.
-const NOT_LINKED: &str = "the HEVC decoder is not linked in this build";
+#[cfg(feature = "bench")]
+#[doc(hidden)]
+pub mod bench_api;
 
-/// How the chroma planes are sampled relative to luma.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ChromaFormat {
-    /// No chroma planes at all.
-    Monochrome,
-    /// Chroma at half resolution in both directions.
-    #[default]
-    Yuv420,
-    /// Chroma at half resolution horizontally only.
-    Yuv422,
-    /// Chroma at full resolution.
-    Yuv444,
-}
+#[cfg(test)]
+mod golden;
 
-impl ChromaFormat {
-    /// Map an HEVC `chroma_format_idc` onto this enum.
-    pub const fn from_idc(idc: u8) -> Option<ChromaFormat> {
-        Some(match idc {
-            0 => ChromaFormat::Monochrome,
-            1 => ChromaFormat::Yuv420,
-            2 => ChromaFormat::Yuv422,
-            3 => ChromaFormat::Yuv444,
-            _ => return None,
-        })
-    }
+pub use frame::{ChromaFormat, Frame, Info};
 
-    /// How much to shift a luma x coordinate to reach the chroma plane.
-    pub const fn x_shift(self) -> u32 {
-        match self {
-            ChromaFormat::Yuv420 | ChromaFormat::Yuv422 => 1,
-            _ => 0,
-        }
-    }
+#[cfg(test)]
+use nal::split_annexb;
 
-    /// How much to shift a luma y coordinate to reach the chroma plane.
-    pub const fn y_shift(self) -> u32 {
-        match self {
-            ChromaFormat::Yuv420 => 1,
-            _ => 0,
-        }
-    }
-
-    /// The size of a chroma plane for a picture of the given luma size.
-    pub const fn chroma_size(self, width: u32, height: u32) -> (u32, u32) {
-        if matches!(self, ChromaFormat::Monochrome) {
-            return (0, 0);
-        }
-        (
-            width.div_ceil(1 << self.x_shift()),
-            height.div_ceil(1 << self.y_shift()),
-        )
-    }
-}
-
-/// One decoded picture, in planar YCbCr, one sample per `u16` regardless of
-/// bit depth so that 8-bit and 10-bit content share a representation.
-#[derive(Debug, Clone, Default)]
-pub struct Frame {
-    /// Luma width in samples.
-    pub width: u32,
-    /// Luma height in samples.
-    pub height: u32,
-    /// Bits actually used in each sample, 8 through 12.
-    pub bit_depth: u8,
-    /// Chroma sampling.
-    pub chroma: ChromaFormat,
-    /// Luma plane, `y_stride` samples per row.
-    pub y: Vec<u16>,
-    /// Cb plane, `c_stride` samples per row. Empty when monochrome.
-    pub cb: Vec<u16>,
-    /// Cr plane, `c_stride` samples per row. Empty when monochrome.
-    pub cr: Vec<u16>,
-    /// Samples per row of the luma plane, at least `width`.
-    pub y_stride: u32,
-    /// Samples per row of each chroma plane.
-    pub c_stride: u32,
-}
-
-impl Frame {
-    /// Check that the planes are as large as the declared geometry needs.
-    ///
-    /// The compositor calls this on everything it is handed, so that a buggy
-    /// or malicious decoder cannot make the rest of the crate index past the
-    /// end of a plane.
-    pub fn validate(&self) -> Result<()> {
-        if self.width == 0 || self.height == 0 {
-            return Err(Error::Malformed("decoded frame has a zero dimension"));
-        }
-        if self.y_stride < self.width {
-            return Err(Error::Malformed("luma stride is narrower than the frame"));
-        }
-        let need = (self.y_stride as usize).saturating_mul(self.height as usize);
-        if self.y.len() < need {
-            return Err(Error::Malformed("luma plane is shorter than its geometry"));
-        }
-        if self.chroma == ChromaFormat::Monochrome {
-            return Ok(());
-        }
-        let (cw, ch) = self.chroma.chroma_size(self.width, self.height);
-        if self.c_stride < cw {
-            return Err(Error::Malformed("chroma stride is narrower than the frame"));
-        }
-        let need = (self.c_stride as usize).saturating_mul(ch as usize);
-        if self.cb.len() < need || self.cr.len() < need {
-            return Err(Error::Malformed(
-                "chroma plane is shorter than its geometry",
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// What a parameter set says about the pictures that follow it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Info {
-    /// Luma width in samples.
-    pub width: u32,
-    /// Luma height in samples.
-    pub height: u32,
-    /// Luma bit depth.
-    pub bit_depth: u8,
-    /// Chroma sampling.
-    pub chroma: ChromaFormat,
-}
+use crate::error::Result;
 
 /// Decode a single still picture.
 ///
 /// See the module documentation for the shape of the inputs.
 pub fn decode_still(parameter_sets: &[&[u8]], slices: &[&[u8]]) -> Result<Frame> {
-    let _ = (parameter_sets, slices);
-    Err(Error::Unsupported(NOT_LINKED))
+    let sets = decode::ParameterSets::parse(parameter_sets)?;
+    Ok(decode::decode(&sets, slices)?)
 }
 
 /// Read the geometry out of a sequence parameter set without decoding.
 pub fn probe(parameter_sets: &[&[u8]]) -> Result<Info> {
-    let _ = parameter_sets;
-    Err(Error::Unsupported(NOT_LINKED))
+    let sets = decode::ParameterSets::parse(parameter_sets)?;
+    let sps = sets.first_sps()?;
+    let [l, r, t, b] = sps.crop;
+    Ok(Info {
+        width: sps.width.saturating_sub(l + r).max(1) as u32,
+        height: sps.height.saturating_sub(t + b).max(1) as u32,
+        bit_depth: sps.bit_depth_y,
+        chroma: ChromaFormat::from_idc(sps.chroma_array_type).unwrap_or(ChromaFormat::Monochrome),
+    })
 }
 
-/// True when `e` is the placeholder's own refusal, as opposed to a real
-/// failure inside a linked decoder. Used by the tests that assert the seam is
-/// reached, so that they keep passing once the decoder lands.
-pub fn is_not_linked(e: &Error) -> bool {
-    matches!(e, Error::Unsupported(m) if *m == NOT_LINKED)
+/// Decode one still picture from an Annex-B byte stream.
+///
+/// Start codes are located, the NAL units split out and sorted into parameter
+/// sets and slices, and [`decode_still`] is then applied. HEIF stores NAL
+/// units with length prefixes rather than start codes, so this is used only by
+/// the decoder's own tests, which speak the codec's native framing.
+#[cfg(test)]
+pub(crate) fn decode_annexb(stream: &[u8]) -> Result<Frame> {
+    use alloc::vec::Vec;
+    let units = split_annexb(stream);
+    let mut sets: Vec<&[u8]> = Vec::new();
+    let mut slices: Vec<&[u8]> = Vec::new();
+    for u in units {
+        let Ok(h) = nal::NalHeader::parse(u) else {
+            continue;
+        };
+        if h.is_vcl() {
+            slices.push(u);
+        } else if matches!(h.nal_unit_type, 32..=34) {
+            sets.push(u);
+        }
+    }
+    decode_still(&sets, &slices)
 }

@@ -144,13 +144,18 @@ fn the_grid_item_is_read_out_of_idat() {
 }
 
 #[test]
-fn decoding_reaches_the_codec_seam_and_says_so() {
-    // Everything above the seam works on every fixture; the refusal that comes
-    // back is the placeholder decoder's, not a container failure.
+fn every_fixture_decodes_end_to_end() {
+    // Container, codec and colour conversion, on every file in the corpus.
+    // `tests/pixels.rs` checks that the samples are right; this only checks
+    // that nothing in the chain refuses a file macOS itself wrote.
     for name in ALL {
-        let e = heic_rs::decode(&load(name), &heic_rs::DecodeOptions::default())
-            .expect_err("the decoder is not linked in yet");
-        assert!(heic_rs::hevc::is_not_linked(&e), "{name}: got {e}");
+        let image = heic_rs::decode(&load(name), &heic_rs::DecodeOptions::default())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            image.data.len(),
+            image.row_bytes() * image.height as usize,
+            "{name}"
+        );
     }
 }
 

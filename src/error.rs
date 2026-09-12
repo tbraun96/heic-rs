@@ -20,6 +20,8 @@ pub enum Error {
     MissingBox(&'static str),
     /// An item id referenced from elsewhere does not exist.
     MissingItem(u32),
+    /// A coded slice named a VPS, SPS or PPS the `hvcC` record did not carry.
+    MissingParameterSet(&'static str),
     /// A `dimg` derivation chain refers back to itself.
     CyclicDerivation(u32),
     /// The declared image is larger than [`DecodeOptions::max_pixels`].
@@ -59,6 +61,12 @@ impl fmt::Display for Error {
             Error::Unsupported(what) => write!(f, "unsupported: {what}"),
             Error::MissingBox(what) => write!(f, "required box `{what}` is missing"),
             Error::MissingItem(id) => write!(f, "item {id} is referenced but not present"),
+            Error::MissingParameterSet(what) => {
+                write!(
+                    f,
+                    "the bitstream names a {what} that the file does not carry"
+                )
+            }
             Error::CyclicDerivation(id) => {
                 write!(f, "item {id} derives from itself, directly or indirectly")
             }

@@ -5,13 +5,11 @@
 //!
 //! # Status
 //!
-//! The container half of this crate is complete: boxes, `ftyp`, `meta` and its
-//! children, item properties, `grid` derivation and tile compositing,
-//! transforms, EXIF and ICC extraction, and YCbCr to RGB conversion. The HEVC
-//! still-picture decoder is being written separately and lands as the
-//! [`hevc`] module. Until it does, [`probe()`] works in full and [`decode()`]
-//! fails at the codec seam with
-//! `Error::Unsupported("the HEVC decoder is not linked in this build")`.
+//! Complete and self-contained: boxes, `ftyp`, `meta` and its children, item
+//! properties, `grid` derivation and tile compositing, transforms, EXIF and
+//! ICC extraction, YCbCr to RGB conversion, and the HEVC still-picture intra
+//! decoder in [`hevc`]. [`decode()`] turns a HEIC file into pixels with no C
+//! and no `unsafe` anywhere in the chain.
 //!
 //! # The rule this crate is built on
 //!
@@ -52,14 +50,14 @@
 //! - `std` (default): the [`io`] module, and `std::error::Error` for
 //!   [`Error`]. Turn it off for `no_std` and for wasm.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 extern crate alloc;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(test)))]
 extern crate std;
 
 pub mod boxes;
