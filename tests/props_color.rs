@@ -67,9 +67,14 @@ fn matrix_codes_map_to_the_right_weights() {
         MatrixCoefficients::Bt2020Ncl.luma_weights(),
         (0.2627, 0.0593)
     );
-    // Unspecified falls back to BT.709, which is documented behaviour.
+    // Unspecified is read as BT.601, an unknown matrix as BT.709. Both are
+    // documented behaviour.
     assert_eq!(
         MatrixCoefficients::Unspecified.luma_weights(),
+        (0.299, 0.114)
+    );
+    assert_eq!(
+        MatrixCoefficients::from_code(200).luma_weights(),
         (0.2126, 0.0722)
     );
 }
