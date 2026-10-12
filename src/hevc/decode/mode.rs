@@ -14,8 +14,8 @@ const VER: u8 = 26;
 
 /// Table 8-3, mapping a chroma mode to its 4:2:2 equivalent.
 const MAP_422: [u8; 35] = [
-    0, 1, 2, 2, 2, 2, 3, 5, 7, 8, 10, 12, 13, 15, 16, 18, 20, 22, 23, 25, 27, 29, 31, 33, 34, 34,
-    34, 34, 34, 34, 34, 34, 34, 34, 34,
+    0, 1, 2, 2, 2, 2, 3, 5, 7, 8, 10, 12, 13, 15, 17, 18, 19, 20, 21, 22, 23, 23, 24, 24, 25, 25,
+    26, 27, 27, 28, 28, 29, 29, 30, 31,
 ];
 
 /// Parses the luma intra prediction modes of a coding unit and derives them.
