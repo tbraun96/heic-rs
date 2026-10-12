@@ -77,6 +77,8 @@ pub struct Sps {
     pub transform_skip_rotation: bool,
     /// `implicit_rdpcm_enabled_flag` from the range extension.
     pub implicit_rdpcm: bool,
+    /// `video_signal_type` from the VUI, when the stream has one.
+    pub video_signal: Option<crate::hevc::frame::VideoSignal>,
 }
 
 impl Sps {

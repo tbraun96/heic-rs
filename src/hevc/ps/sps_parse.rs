@@ -164,9 +164,10 @@ pub fn parse(data: &[u8]) -> Result<Sps> {
         transform_skip_context: false,
         transform_skip_rotation: false,
         implicit_rdpcm: false,
+        video_signal: None,
     };
     if r.u1()? != 0 {
-        vui::parse(r, max_sub_minus1)?;
+        sps.video_signal = vui::parse(r, max_sub_minus1)?;
     }
     if r.more_rbsp_data() && r.u1()? != 0 {
         parse_extensions(r, &mut sps)?;

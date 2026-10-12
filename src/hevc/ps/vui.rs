@@ -1,10 +1,12 @@
-//! `vui_parameters` and `hrd_parameters` (Annex E), traversed but not used.
+//! `vui_parameters` and `hrd_parameters` (Annex E).
 //!
 //! The decoder needs nothing from the VUI, but the SPS range extension flags
-//! sit after it, so the syntax has to be walked exactly.
+//! sit after it, so the syntax has to be walked exactly. One thing is kept:
+//! `video_signal_type`, which is all a file without `colr` says about colour.
 
 use crate::hevc::bits::BitReader;
 use crate::hevc::error::Result;
+use crate::hevc::frame::VideoSignal;
 
 /// Parses `hrd_parameters(commonInfPresentFlag, maxNumSubLayersMinus1)`.
 fn hrd(r: &mut BitReader<'_>, common: bool, max_sub_minus1: u32) -> Result<()> {
@@ -52,8 +54,8 @@ fn hrd(r: &mut BitReader<'_>, common: bool, max_sub_minus1: u32) -> Result<()> {
     Ok(())
 }
 
-/// Parses `vui_parameters()`; every field is discarded.
-pub fn parse(r: &mut BitReader<'_>, max_sub_minus1: u32) -> Result<()> {
+/// Parses `vui_parameters()` and returns its `video_signal_type`, if any.
+pub fn parse(r: &mut BitReader<'_>, max_sub_minus1: u32) -> Result<Option<VideoSignal>> {
     if r.u1()? != 0 {
         // aspect_ratio_info_present_flag
         let idc = r.u(8)?;
@@ -64,12 +66,21 @@ pub fn parse(r: &mut BitReader<'_>, max_sub_minus1: u32) -> Result<()> {
     if r.u1()? != 0 {
         r.skip(1)?; // overscan_appropriate_flag
     }
+    let mut signal = None;
     if r.u1()? != 0 {
         // video_signal_type_present_flag
-        r.skip(3 + 1)?;
-        if r.u1()? != 0 {
-            r.skip(24)?;
-        }
+        r.skip(3)?; // video_format
+        let full_range = r.u1()? != 0;
+        let description = if r.u1()? != 0 {
+            // colour_description_present_flag
+            Some([code(r)?, code(r)?, code(r)?])
+        } else {
+            None
+        };
+        signal = Some(VideoSignal {
+            full_range,
+            description,
+        });
     }
     if r.u1()? != 0 {
         // chroma_loc_info_present_flag
@@ -100,5 +111,14 @@ pub fn parse(r: &mut BitReader<'_>, max_sub_minus1: u32) -> Result<()> {
             r.ue()?;
         }
     }
-    Ok(())
+    Ok(signal)
 }
+
+/// One of the three eight-bit colour codes.
+fn code(r: &mut BitReader<'_>) -> Result<u8> {
+    Ok((r.u(8)? & 0xff) as u8)
+}
+
+#[cfg(test)]
+#[path = "vui_tests.rs"]
+mod tests;

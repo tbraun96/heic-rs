@@ -2,6 +2,7 @@
 
 use crate::boxes::BoxHeader;
 use crate::error::{Error, Result};
+use crate::hevc::VideoSignal;
 
 /// Matrix coefficients, from ISO/IEC 23091-2 (formerly H.273).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +94,29 @@ impl Default for Nclx {
             matrix: MatrixCoefficients::Bt709,
             matrix_code: 1,
             range: Range::Limited,
+        }
+    }
+}
+
+impl From<VideoSignal> for Nclx {
+    /// The colour description a coded picture carries in its own bitstream,
+    /// which is what applies to an item without `colr`.
+    ///
+    /// A stream that signals its range but no colour description has
+    /// `colour_primaries`, `transfer_characteristics` and `matrix_coeffs`
+    /// inferred as 2, unspecified (Rec. ITU-T H.265, E.3.1).
+    fn from(signal: VideoSignal) -> Self {
+        let [primaries, transfer, matrix] = signal.description.unwrap_or([2, 2, 2]);
+        Nclx {
+            primaries: u16::from(primaries),
+            transfer: u16::from(transfer),
+            matrix: MatrixCoefficients::from_code(u16::from(matrix)),
+            matrix_code: u16::from(matrix),
+            range: if signal.full_range {
+                Range::Full
+            } else {
+                Range::Limited
+            },
         }
     }
 }

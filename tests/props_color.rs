@@ -5,7 +5,9 @@ mod common;
 
 use common::*;
 use heic_rs::boxes::BoxIter;
-use heic_rs::props::colr::{self, ColorInfo, MatrixCoefficients, Range};
+use heic_rs::decode::pick_nclx;
+use heic_rs::hevc::VideoSignal;
+use heic_rs::props::colr::{self, ColorInfo, MatrixCoefficients, Nclx, Range};
 use heic_rs::props::simple::{Mirror, Rotation};
 use heic_rs::props::{self, Transform};
 
@@ -119,4 +121,47 @@ fn gather_keeps_transform_order_and_both_colr_flavours() {
     assert_eq!(p.icc, Some(&b"profile"[..]));
     assert!(!p.icc_restricted);
     assert_eq!(p.ispe.map(|i| (i.width, i.height)), Some((8, 8)));
+}
+
+#[test]
+fn a_coded_pictures_own_description_becomes_an_nclx() {
+    let signal = VideoSignal {
+        full_range: true,
+        description: Some([5, 6, 6]),
+    };
+    let n = Nclx::from(signal);
+    assert_eq!((n.primaries, n.transfer, n.matrix_code), (5, 6, 6));
+    assert_eq!(n.matrix, MatrixCoefficients::Bt601);
+    assert_eq!(n.range, Range::Full);
+}
+
+#[test]
+fn a_range_without_a_description_leaves_the_rest_unspecified() {
+    let signal = VideoSignal {
+        full_range: true,
+        description: None,
+    };
+    let n = Nclx::from(signal);
+    // H.265 E.3.1 infers 2, unspecified, for all three codes.
+    assert_eq!((n.primaries, n.transfer, n.matrix_code), (2, 2, 2));
+    assert_eq!(n.matrix, MatrixCoefficients::Unspecified);
+    assert_eq!(n.range, Range::Full);
+}
+
+#[test]
+fn colr_wins_over_the_bitstream_and_the_bitstream_over_the_fallback() {
+    let colr = Nclx {
+        primaries: 9,
+        transfer: 16,
+        matrix: MatrixCoefficients::Bt2020Ncl,
+        matrix_code: 9,
+        range: Range::Limited,
+    };
+    let coded = VideoSignal {
+        full_range: true,
+        description: Some([1, 13, 6]),
+    };
+    assert_eq!(pick_nclx(Some(colr), Some(coded)), colr);
+    assert_eq!(pick_nclx(None, Some(coded)), Nclx::from(coded));
+    assert_eq!(pick_nclx(None, None), Nclx::default());
 }
