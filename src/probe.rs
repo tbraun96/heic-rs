@@ -65,7 +65,16 @@ pub struct ImageInfo {
 /// HEVC decoder has not landed.
 pub fn probe(bytes: &[u8]) -> Result<ImageInfo> {
     let ctx = Context::open(bytes)?;
-    let id = ctx.meta.primary;
+    probe_item(&ctx, ctx.meta.primary)
+}
+
+/// Like [`probe`], for one of the images [`crate::images`] lists.
+pub fn probe_image(bytes: &[u8], id: u32) -> Result<ImageInfo> {
+    let ctx = Context::open(bytes)?;
+    probe_item(&ctx, ctx.image(id)?)
+}
+
+fn probe_item(ctx: &Context<'_>, id: u32) -> Result<ImageInfo> {
     let p = ctx.props(id)?;
     let derivation = ctx.grid(id)?;
 
