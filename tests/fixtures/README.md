@@ -46,6 +46,7 @@ to write exact parser assertions.
 | `photo-2048.heic` | 2048x1536 | Smooth synthetic multi-colour field built from superposed sinusoids | `grid`, 3 rows x 4 cols of 512x512 tiles |
 | `rotated-90.heic` | 1536x2048 | `photo-2048` put through `sips -r 90` | `grid`, 4 rows x 3 cols; rotation is baked into the pixels, `irot` is still 0 |
 | `with-exif.heic` | 2048x1536 | `photo-2048` with description, copyright and artist set via `sips -s` | `grid`, 3 rows x 4 cols, plus an `Exif` item and an XMP `mime` item |
+| `three-images.heic` | 64x48, 64x48, 32x80 | Three images: solid (220,30,30), solid (30,200,40), and (40,60,230) at half alpha | three `hvc1` images with a thumbnail each, the third with an alpha item; made by libheif's `heif-enc -t 16` from three flat PNGs, as `sips` writes one image per file; no `.ref.png` |
 
 Each `.heic` has a matching `.ref.png` at the same dimensions (8-bit RGB, colour
 type 2).
