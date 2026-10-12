@@ -11,7 +11,7 @@ pub enum MatrixCoefficients {
     Identity,
     /// 1: ITU-R BT.709.
     Bt709,
-    /// 2: unspecified. Treated as BT.709 with a note in the docs.
+    /// 2: unspecified. Treated as BT.601, see [`MatrixCoefficients::luma_weights`].
     Unspecified,
     /// 5 or 6: ITU-R BT.601 / SMPTE 170M.
     Bt601,
@@ -39,12 +39,13 @@ impl MatrixCoefficients {
 
     /// The luma weights `(kr, kb)` this matrix uses.
     ///
-    /// An unspecified or unknown matrix falls back to BT.709, which is what
-    /// every HEIC writer this crate has seen actually means; the fallback is
-    /// deliberate and documented rather than silent.
+    /// An unspecified matrix is read as BT.601, which is what still images
+    /// have meant since JFIF and what libheif assumes. A matrix this crate
+    /// does not know falls back to BT.709. Both are deliberate and documented
+    /// rather than silent.
     pub fn luma_weights(self) -> (f32, f32) {
         match self {
-            MatrixCoefficients::Bt601 => (0.299, 0.114),
+            MatrixCoefficients::Bt601 | MatrixCoefficients::Unspecified => (0.299, 0.114),
             MatrixCoefficients::Smpte240m => (0.212, 0.087),
             MatrixCoefficients::Bt2020Ncl => (0.2627, 0.0593),
             _ => (0.2126, 0.0722),
