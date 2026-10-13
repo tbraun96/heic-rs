@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An item that carries no `colr` is converted with the colour its coded tiles declare. Canon writes
+  the description on the tiles and leaves the `grid` bare, so the grid was decoded with the BT.709
+  limited-range fallback: duller than the file's own thumbnail, and never tone mapped. `colr` is
+  optional (ISO/IEC 23008-12, 6.5.5), and a derived item does not repeat the properties of the
+  coded pictures it is assembled from.
+
+### Added
+
+- `Context::declared_nclx`: what a file declares for an item -- its own `colr`, or its tiles'.
+
 ## [0.1.4] - 2026-10-11
 
 Security fixes: five ways a malformed HEVC stream could panic, all found by fuzzing and reported

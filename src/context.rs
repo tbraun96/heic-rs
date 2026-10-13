@@ -1,8 +1,8 @@
 //! One parsed file, and the questions both `probe` and `decode` ask of it.
 //!
 //! Keeping the resolution logic here means the two public entry points cannot
-//! disagree about which item is the primary one, what its geometry is, or
-//! whether it has alpha.
+//! disagree about which item is the primary one, what its geometry is, whether
+//! it has alpha, or what colour it is.
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -13,6 +13,7 @@ use crate::grid::{self, Grid};
 use crate::meta::iref::{RefKind, targets};
 use crate::meta::{self, Meta};
 use crate::metadata;
+use crate::props::colr::Nclx;
 use crate::props::simple::AuxKind;
 use crate::props::{self, ItemProps};
 
@@ -47,6 +48,33 @@ impl<'a> Context<'a> {
     /// Every property associated with an item.
     pub fn props(&self, item: u32) -> Result<ItemProps<'a>> {
         props::gather(&self.meta.props, item)
+    }
+
+    /// The colour an item declares: its own `colr`, or the one its coded tiles
+    /// declare when the item is a derivation that carries none.
+    ///
+    /// `colr` is optional (ISO/IEC 23008-12, 6.5.5), and a derived item does not
+    /// repeat the properties of the coded pictures it is assembled from, so the
+    /// description that applies to a `grid` is the one written on its tiles. A
+    /// grid is assembled from pictures of one kind, so the first tile that
+    /// declares a colour speaks for all of them.
+    ///
+    /// `Ok(None)` means the file declares nothing, which is not the same as
+    /// declaring the fallback: what an unlabelled file means is the caller's
+    /// decision. Decoding applies [`effective_nclx`](crate::decode::effective_nclx).
+    pub fn declared_nclx(&self, item: u32) -> Result<Option<Nclx>> {
+        if let Some(own) = self.props(item)?.nclx {
+            return Ok(Some(own));
+        }
+        let Some((_, tiles)) = self.grid(item)? else {
+            return Ok(None);
+        };
+        for tile in tiles {
+            if let Some(n) = self.props(tile)?.nclx {
+                return Ok(Some(n));
+            }
+        }
+        Ok(None)
     }
 
     /// The bytes of one item.
