@@ -50,6 +50,13 @@ to write exact parser assertions.
 Each `.heic` has a matching `.ref.png` at the same dimensions (8-bit RGB, colour
 type 2).
 
+## HEVC vectors made with FFmpeg
+
+`sips` only writes 4:2:0, so `hevc/intra-444-8.hevc` is made by
+`scripts/make-444-vector.sh` instead: one 128x128 intra picture of FFmpeg's own
+`testsrc2` pattern, encoded by x265 in 4:4:4 8-bit. Its ground truth is FFmpeg's
+decode, as a checksum in `src/hevc/golden_444.rs`. It needs ffmpeg with libx265.
+
 ## Caveats for test authors
 
 * `irot` is present in **every** fixture with **angle 0**. Presence alone does not
