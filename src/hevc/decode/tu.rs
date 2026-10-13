@@ -31,7 +31,9 @@ pub fn transform_tree(
     } else {
         forced
     };
-    if log2_size > 2 && d.cat != 0 {
+    // `cbf_cb` and `cbf_cr`: 4:4:4 signals them on 4x4 blocks too, 4:2:0 and 4:2:2
+    // inherit them from the parent there (clause 7.3.8.8).
+    if (log2_size > 2 && d.cat != 0) || d.cat == 3 {
         let extra = d.cat == 2 && (!split || log2_size == 3);
         for c in 0..2 {
             let parent = if depth == 0 {

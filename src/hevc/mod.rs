@@ -50,6 +50,9 @@ pub mod bench_api;
 #[cfg(test)]
 mod golden;
 
+#[cfg(test)]
+mod golden_444;
+
 pub use frame::{ChromaFormat, Frame, Info};
 
 #[cfg(test)]
