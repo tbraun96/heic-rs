@@ -50,6 +50,21 @@ to write exact parser assertions.
 Each `.heic` has a matching `.ref.png` at the same dimensions (8-bit RGB, colour
 type 2).
 
+### `grid-422-10bit.heic`, `full-range-no-colr.heic`
+
+Two grids in layouts `sips` cannot write, from `scripts/make-grid-vectors.sh` (macOS, needs
+libheif's `heif-enc` with x265; the source PNGs come from the pure-stdlib
+`scripts/gen-grid-pngs.py`). Their `.ref.png` is Apple's decode, as for the files above, but
+16-bit RGB.
+
+| File | Dimensions | What it depicts | Structure |
+|---|---|---|---|
+| `grid-422-10bit.heic` | 192x128 | Slow colour waves | `grid`, 2 rows x 3 cols of 64x64 tiles, 4:2:2 10-bit (RExt), nclx full range: the layout of Canon and Sony `.HIF` files |
+| `full-range-no-colr.heic` | 128x128 | Near black (8) and near white (248) on top; a grey ramp and a colour ramp below | `grid`, 2 x 2 of 64x64 tiles, 4:2:0 10-bit, **no `colr`**: full range is said only in the tiles' VUI, as some phones write it (the `nclx` box heif-enc writes is renamed `free`) |
+
+Expect a few code values of drift, and more on the seams between tiles, where Apple upsamples
+each tile's chroma on its own.
+
 ## Caveats for test authors
 
 * `irot` is present in **every** fixture with **angle 0**. Presence alone does not
