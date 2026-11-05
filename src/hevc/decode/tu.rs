@@ -31,7 +31,9 @@ pub fn transform_tree(
     } else {
         forced
     };
-    if log2_size > 2 && d.cat != 0 {
+    // 7.3.8.8: `log2TrafoSize > 2 || ChromaArrayType == 3` -- in 4:4:4 a 4x4 block carries its own
+    // chroma flags, which a 4:2:0 or 4:2:2 one takes from its parent
+    if (log2_size > 2 && d.cat != 0) || d.cat == 3 {
         let extra = d.cat == 2 && (!split || log2_size == 3);
         for c in 0..2 {
             let parent = if depth == 0 {

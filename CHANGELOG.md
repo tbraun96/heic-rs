@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 4:2:2 intra pictures decode to the right samples. The 4:2:2 chroma mode mapping (Table 8-3) was
+  wrong from mode 14 on, so chroma was predicted, and its residual scanned, with the wrong mode; on
+  real encoder output the CABAC state went off track and decoding failed with `Truncated`.
+- 4:4:4 intra pictures with 4x4 transform blocks decode. Those blocks code their own `cbf_cb` and
+  `cbf_cr` (7.3.8.8: `log2TrafoSize > 2 || ChromaArrayType == 3`); they were taken from the parent
+  block instead, which desynchronised the slice data.
+
 ## [0.1.4] - 2026-10-11
 
 Security fixes: five ways a malformed HEVC stream could panic, all found by fuzzing and reported
