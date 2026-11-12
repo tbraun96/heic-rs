@@ -69,8 +69,9 @@ pub fn probe(bytes: &[u8]) -> Result<ImageInfo> {
     let p = ctx.props(id)?;
     let derivation = ctx.grid(id)?;
 
-    // A grid carries its own size and colour, but the codec configuration
-    // lives on its tiles, so that is where the chroma format comes from.
+    // A grid carries its own size, but the codec configuration lives on its
+    // tiles, so that is where the chroma format comes from. Its colour may
+    // live there too, which the `declared_*` resolution handles.
     let (grid_info, codec) = match &derivation {
         Some((g, tiles)) => {
             let first = *tiles
@@ -110,7 +111,7 @@ pub fn probe(bytes: &[u8]) -> Result<ImageInfo> {
         is_grid: derivation.is_some(),
         grid: grid_info,
         has_exif: ctx.exif_item(id).is_some(),
-        has_icc: p.icc.is_some(),
+        has_icc: ctx.declared_icc(id)?.is_some(),
         has_xmp: ctx.xmp_item(id).is_some(),
         brand: ctx.brand(),
         primary_item: id,

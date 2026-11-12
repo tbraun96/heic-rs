@@ -54,7 +54,8 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
 
     let decoded = decode_item(&ctx, id, &p, threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
-    let nclx = p.nclx.unwrap_or_default();
+    // `colr` is optional, and a grid carries none where its tiles do.
+    let nclx = ctx.declared_nclx(id)?.unwrap_or_else(|| effective_nclx(&p));
     let (layout, alpha) = (options.layout, alpha.as_ref());
     let image = match &decoded {
         Decoded::Picture(frame) => {
