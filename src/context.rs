@@ -102,6 +102,46 @@ impl<'a> Context<'a> {
         Ok((info.width, info.height))
     }
 
+    /// The images of the file that are meant to be shown, the primary one
+    /// first and the others in the order of `iinf`. Thumbnails, auxiliary
+    /// images such as alpha planes, the tiles of a grid and items marked
+    /// hidden are left out, as are items that are not images.
+    pub fn images(&self) -> Vec<u32> {
+        let shown = |id: u32| {
+            self.meta.item(id).is_some_and(|i| {
+                (i.is_hevc() || i.is_grid())
+                    && !i.hidden
+                    && targets(&self.meta.refs, id, RefKind::Thmb).is_empty()
+                    && targets(&self.meta.refs, id, RefKind::Auxl).is_empty()
+                    && !self
+                        .meta
+                        .refs
+                        .iter()
+                        .any(|r| r.kind == RefKind::Dimg && r.to.contains(&id))
+            })
+        };
+        let primary = self.meta.primary;
+        let others = self
+            .meta
+            .items
+            .iter()
+            .map(|i| i.id)
+            .filter(|&id| id != primary);
+        core::iter::once(primary)
+            .chain(others)
+            .filter(|&id| id == primary || shown(id))
+            .collect()
+    }
+
+    /// `id` when it is one of [`Self::images`], an error otherwise.
+    pub fn image(&self, id: u32) -> Result<u32> {
+        if self.images().contains(&id) {
+            Ok(id)
+        } else {
+            Err(Error::MissingItem(id))
+        }
+    }
+
     /// The auxiliary item carrying an alpha plane for `item`, if any.
     pub fn alpha_item(&self, item: u32) -> Result<Option<u32>> {
         for r in &self.meta.refs {
