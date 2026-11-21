@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now decode sample for sample like FFmpeg. A 4:2:2 golden vector now covers the path, made with
   FFmpeg and x265 because `sips` cannot write 4:2:2 (`scripts/make-422-vector.sh`). Diagnosis in
   #5 by **HeviLUO**.
+- **4:4:4 pictures** failed with "ran out of bytes reading an HEVC bitstream" or "picture is not
+  fully covered by slices" as soon as the encoder used 4x4 transform blocks. 4:4:4 signals
+  `cbf_cb` and `cbf_cr` on them, 4:2:0 and 4:2:2 do not, and both were skipped, so CABAC lost
+  sync (`decode/tu.rs`). A 4:4:4 golden vector now covers it, made with FFmpeg and x265 because
+  `sips` cannot write 4:4:4 (`scripts/make-444-vector.sh`).
 
 ## [0.1.4] - 2026-10-11
 
