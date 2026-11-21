@@ -41,6 +41,7 @@ fn sps(width: usize, height: usize, log2_ctb: usize) -> Sps {
         transform_skip_context: false,
         transform_skip_rotation: false,
         implicit_rdpcm: false,
+        video_signal: None,
     }
 }
 

@@ -2,6 +2,7 @@
 
 use crate::boxes::BoxHeader;
 use crate::error::{Error, Result};
+use crate::hevc::VideoSignal;
 
 /// Matrix coefficients, from ISO/IEC 23091-2 (formerly H.273).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,7 +12,7 @@ pub enum MatrixCoefficients {
     Identity,
     /// 1: ITU-R BT.709.
     Bt709,
-    /// 2: unspecified. Treated as BT.709 with a note in the docs.
+    /// 2: unspecified. Treated as BT.601, see [`MatrixCoefficients::luma_weights`].
     Unspecified,
     /// 5 or 6: ITU-R BT.601 / SMPTE 170M.
     Bt601,
@@ -39,12 +40,13 @@ impl MatrixCoefficients {
 
     /// The luma weights `(kr, kb)` this matrix uses.
     ///
-    /// An unspecified or unknown matrix falls back to BT.709, which is what
-    /// every HEIC writer this crate has seen actually means; the fallback is
-    /// deliberate and documented rather than silent.
+    /// An unspecified matrix is read as BT.601, which is what still images
+    /// have meant since JFIF and what libheif assumes. A matrix this crate
+    /// does not know falls back to BT.709. Both are deliberate and documented
+    /// rather than silent.
     pub fn luma_weights(self) -> (f32, f32) {
         match self {
-            MatrixCoefficients::Bt601 => (0.299, 0.114),
+            MatrixCoefficients::Bt601 | MatrixCoefficients::Unspecified => (0.299, 0.114),
             MatrixCoefficients::Smpte240m => (0.212, 0.087),
             MatrixCoefficients::Bt2020Ncl => (0.2627, 0.0593),
             _ => (0.2126, 0.0722),
@@ -93,6 +95,29 @@ impl Default for Nclx {
             matrix: MatrixCoefficients::Bt709,
             matrix_code: 1,
             range: Range::Limited,
+        }
+    }
+}
+
+impl From<VideoSignal> for Nclx {
+    /// The colour description a coded picture carries in its own bitstream,
+    /// which is what applies to an item without `colr`.
+    ///
+    /// A stream that signals its range but no colour description has
+    /// `colour_primaries`, `transfer_characteristics` and `matrix_coeffs`
+    /// inferred as 2, unspecified (Rec. ITU-T H.265, E.3.1).
+    fn from(signal: VideoSignal) -> Self {
+        let [primaries, transfer, matrix] = signal.description.unwrap_or([2, 2, 2]);
+        Nclx {
+            primaries: u16::from(primaries),
+            transfer: u16::from(transfer),
+            matrix: MatrixCoefficients::from_code(u16::from(matrix)),
+            matrix_code: u16::from(matrix),
+            range: if signal.full_range {
+                Range::Full
+            } else {
+                Range::Limited
+            },
         }
     }
 }

@@ -1,8 +1,8 @@
 //! One parsed file, and the questions both `probe` and `decode` ask of it.
 //!
 //! Keeping the resolution logic here means the two public entry points cannot
-//! disagree about which item is the primary one, what its geometry is, or
-//! whether it has alpha.
+//! disagree about which item is the primary one, what its geometry is, whether
+//! it has alpha, or what colour it is.
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -15,6 +15,8 @@ use crate::meta::{self, Meta};
 use crate::metadata;
 use crate::props::simple::AuxKind;
 use crate::props::{self, ItemProps};
+
+mod colour;
 
 /// A file, parsed as far as its container.
 #[derive(Debug, Clone)]
@@ -100,6 +102,46 @@ impl<'a> Context<'a> {
         let hvcc = p.hvcc.as_ref().ok_or(Error::MissingBox("ispe"))?;
         let info = crate::hevc::probe(&hvcc.parameter_sets())?;
         Ok((info.width, info.height))
+    }
+
+    /// The images of the file that are meant to be shown, the primary one
+    /// first and the others in the order of `iinf`. Thumbnails, auxiliary
+    /// images such as alpha planes, the tiles of a grid and items marked
+    /// hidden are left out, as are items that are not images.
+    pub fn images(&self) -> Vec<u32> {
+        let shown = |id: u32| {
+            self.meta.item(id).is_some_and(|i| {
+                (i.is_hevc() || i.is_grid())
+                    && !i.hidden
+                    && targets(&self.meta.refs, id, RefKind::Thmb).is_empty()
+                    && targets(&self.meta.refs, id, RefKind::Auxl).is_empty()
+                    && !self
+                        .meta
+                        .refs
+                        .iter()
+                        .any(|r| r.kind == RefKind::Dimg && r.to.contains(&id))
+            })
+        };
+        let primary = self.meta.primary;
+        let others = self
+            .meta
+            .items
+            .iter()
+            .map(|i| i.id)
+            .filter(|&id| id != primary);
+        core::iter::once(primary)
+            .chain(others)
+            .filter(|&id| id == primary || shown(id))
+            .collect()
+    }
+
+    /// `id` when it is one of [`Self::images`], an error otherwise.
+    pub fn image(&self, id: u32) -> Result<u32> {
+        if self.images().contains(&id) {
+            Ok(id)
+        } else {
+            Err(Error::MissingItem(id))
+        }
     }
 
     /// The auxiliary item carrying an alpha plane for `item`, if any.

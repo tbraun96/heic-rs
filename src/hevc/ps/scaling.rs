@@ -34,9 +34,9 @@ impl Default for ScalingListData {
             lists: [[[16u8; 64]; 6]; 4],
             dc: [[16u8; 6]; 2],
         };
-        for size_id in 1..4 {
-            for matrix_id in 0..6 {
-                d.lists[size_id][matrix_id] = if matrix_id < 3 {
+        for lists in &mut d.lists[1..] {
+            for (matrix_id, list) in lists.iter_mut().enumerate() {
+                *list = if matrix_id < 3 {
                     DEFAULT_INTRA
                 } else {
                     DEFAULT_INTER
@@ -85,10 +85,10 @@ pub fn parse(r: &mut BitReader<'_>, d: &mut ScalingListData) -> Result<()> {
                     d.dc[size_id - 2][matrix_id] = dc as u8;
                     next = dc;
                 }
-                for i in 0..coef_num {
+                for coef in &mut d.lists[size_id][matrix_id][..coef_num] {
                     let delta = r.se()?;
                     next = (next + delta + 256).rem_euclid(256);
-                    d.lists[size_id][matrix_id][i] = next as u8;
+                    *coef = next as u8;
                 }
             }
             matrix_id += step;
@@ -104,15 +104,10 @@ pub fn parse(r: &mut BitReader<'_>, d: &mut ScalingListData) -> Result<()> {
 
 /// Returns true when any list holds a zero, which the specification forbids.
 fn size_id_fixup(d: &ScalingListData) -> bool {
-    for size_id in 0..4 {
+    d.lists.iter().enumerate().any(|(size_id, lists)| {
         let n = if size_id == 0 { 16 } else { 64 };
-        for matrix_id in 0..6 {
-            if d.lists[size_id][matrix_id][..n].contains(&0) {
-                return true;
-            }
-        }
-    }
-    false
+        lists.iter().any(|list| list[..n].contains(&0))
+    })
 }
 
 /// `ScalingFactor[sizeId][matrixId][x][y]` flattened to `[y * n + x]`.

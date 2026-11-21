@@ -51,6 +51,9 @@ jobs:
     name: publish to crates.io
     needs: verify
     runs-on: ubuntu-latest
+    # Waits for the owner's approval; the token is an environment secret, so no
+    # other workflow (or collaborator branch) can read it.
+    environment: crates-io
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

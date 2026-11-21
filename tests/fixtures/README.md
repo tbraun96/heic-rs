@@ -46,9 +46,41 @@ to write exact parser assertions.
 | `photo-2048.heic` | 2048x1536 | Smooth synthetic multi-colour field built from superposed sinusoids | `grid`, 3 rows x 4 cols of 512x512 tiles |
 | `rotated-90.heic` | 1536x2048 | `photo-2048` put through `sips -r 90` | `grid`, 4 rows x 3 cols; rotation is baked into the pixels, `irot` is still 0 |
 | `with-exif.heic` | 2048x1536 | `photo-2048` with description, copyright and artist set via `sips -s` | `grid`, 3 rows x 4 cols, plus an `Exif` item and an XMP `mime` item |
+| `three-images.heic` | 64x48, 64x48, 32x80 | Three images: solid (220,30,30), solid (30,200,40), and (40,60,230) at half alpha | three `hvc1` images with a thumbnail each, the third with an alpha item; made by libheif's `heif-enc -t 16` from three flat PNGs, as `sips` writes one image per file; no `.ref.png` |
 
 Each `.heic` has a matching `.ref.png` at the same dimensions (8-bit RGB, colour
 type 2).
+
+### `grid-422-10bit.heic`, `full-range-no-colr.heic`
+
+Two grids in layouts `sips` cannot write, from `scripts/make-grid-vectors.sh` (macOS, needs
+libheif's `heif-enc` with x265; the source PNGs come from the pure-stdlib
+`scripts/gen-grid-pngs.py`). Their `.ref.png` is Apple's decode, as for the files above, but
+16-bit RGB.
+
+| File | Dimensions | What it depicts | Structure |
+|---|---|---|---|
+| `grid-422-10bit.heic` | 192x128 | Slow colour waves | `grid`, 2 rows x 3 cols of 64x64 tiles, 4:2:2 10-bit (RExt), nclx full range: the layout of Canon and Sony `.HIF` files |
+| `full-range-no-colr.heic` | 128x128 | Near black (8) and near white (248) on top; a grey ramp and a colour ramp below | `grid`, 2 x 2 of 64x64 tiles, 4:2:0 10-bit, **no `colr`**: full range is said only in the tiles' VUI, as some phones write it (the `nclx` box heif-enc writes is renamed `free`) |
+
+Expect a few code values of drift, and more on the seams between tiles, where Apple upsamples
+each tile's chroma on its own.
+
+### `hevc/intra-422-10.hevc`
+
+A raw HEVC stream (Annex B), not a HEIC: one 128x128 intra picture of FFmpeg's
+synthetic `testsrc2` pattern, 4:2:2 10-bit in the RExt profile, encoded by x265.
+`sips` cannot write 4:2:2, which is what Canon and Sony cameras put in their `.HIF`
+files, so this one vector comes from `scripts/make-422-vector.sh` instead (Linux or
+macOS, needs FFmpeg with libx265). Its ground truth is FFmpeg's own decode, kept as
+a checksum in `src/hevc/golden_422.rs`, which the decoder must match sample for sample.
+
+### `hevc/intra-444-8.hevc`
+
+`sips` only writes 4:2:0, so `hevc/intra-444-8.hevc` is made by
+`scripts/make-444-vector.sh` instead: one 128x128 intra picture of FFmpeg's own
+`testsrc2` pattern, encoded by x265 in 4:4:4 8-bit. Its ground truth is FFmpeg's
+decode, as a checksum in `src/hevc/golden_444.rs`. It needs ffmpeg with libx265.
 
 ## Caveats for test authors
 

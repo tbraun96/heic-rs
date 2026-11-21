@@ -86,13 +86,20 @@ pub mod upsample;
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub mod io;
 
-pub use crate::decode::decode;
+pub use crate::decode::{decode, decode_image};
 pub use crate::error::{Error, Result};
 pub use crate::ftyp::Brand;
 pub use crate::grid::Grid;
 pub use crate::hevc::ChromaFormat;
 pub use crate::image::{DEFAULT_MAX_PIXELS, DecodeOptions, Image, PixelLayout};
-pub use crate::probe::{GridInfo, ImageInfo, probe};
+pub use crate::probe::{GridInfo, ImageInfo, probe, probe_image};
 pub use crate::props::Transform;
 pub use crate::props::colr::{MatrixCoefficients, Nclx, Range};
 pub use crate::props::simple::{Mirror, Rotation};
+
+/// The images of a HEIF file that are meant to be shown, as item ids for
+/// [`decode_image`] and [`probe_image`]. The primary image comes first; a file
+/// with one image gives one id.
+pub fn images(bytes: &[u8]) -> Result<alloc::vec::Vec<u32>> {
+    Ok(context::Context::open(bytes)?.images())
+}

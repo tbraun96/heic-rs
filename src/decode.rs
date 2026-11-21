@@ -11,7 +11,7 @@ use crate::color::{self, Source};
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::grid::{self, Grid, Mosaic};
-use crate::hevc::{self, Frame};
+use crate::hevc::{self, Frame, VideoSignal};
 use crate::image::{DecodeOptions, Image, check_pixels};
 use crate::parallel;
 use crate::props::ItemProps;
@@ -30,18 +30,36 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     // One thread pool for the whole decode, not one per stage. Inside, the
     // caller's choice has already been honoured, so `threads` there means
     // "the pool we are in" or "this thread" and nothing else.
-    parallel::scope(options.threads, |threads| run(bytes, options, threads))
+    parallel::scope(options.threads, |threads| {
+        run(bytes, None, options, threads)
+    })
+}
+
+/// Like [`decode`], for one of the images [`crate::images`] lists instead of
+/// the primary one.
+pub fn decode_image(bytes: &[u8], id: u32, options: &DecodeOptions) -> Result<Image> {
+    parallel::scope(options.threads, |threads| {
+        run(bytes, Some(id), options, threads)
+    })
 }
 
 /// The decode itself, already inside whatever thread pool the caller asked
 /// for.
-fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<Image> {
+fn run(
+    bytes: &[u8],
+    id: Option<u32>,
+    options: &DecodeOptions,
+    threads: Option<usize>,
+) -> Result<Image> {
     let ctx = Context::open(bytes)?;
-    let id = ctx.meta.primary;
+    let id = match id {
+        Some(id) => ctx.image(id)?,
+        None => ctx.meta.primary,
+    };
     let p = ctx.props(id)?;
     if options.strict && ctx.meta.props.unknown_essential(id).is_some() {
         return Err(Error::Unsupported(
-            "the primary item carries an essential property this build does not implement",
+            "the item carries an essential property this build does not implement",
         ));
     }
     let limit = options.pixel_limit();
@@ -54,7 +72,12 @@ fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<
 
     let decoded = decode_item(&ctx, id, &p, threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
-    let nclx = p.nclx.unwrap_or_default();
+    // `colr` is optional: the item's own, else its tiles' (a grid carries none where they do),
+    // else what the coded picture says about itself.
+    let nclx = match ctx.declared_nclx(id)? {
+        Some(declared) => declared,
+        None => resolve_nclx(&ctx, id, &p)?,
+    };
     let (layout, alpha) = (options.layout, alpha.as_ref());
     let image = match &decoded {
         Decoded::Picture(frame) => {
@@ -163,6 +186,43 @@ fn alpha_frame(
 
 /// The colour description that will be used for an item, including the
 /// documented fallback for files that carry no `colr`.
+///
+/// This looks at the item's properties only. Decoding also asks the coded
+/// picture when they say nothing; see [`pick_nclx`].
 pub fn effective_nclx(p: &ItemProps<'_>) -> Nclx {
     p.nclx.unwrap_or_default()
+}
+
+/// Which colour description wins: the item's own `colr`, then what the coded
+/// picture says about itself, then the documented fallback.
+///
+/// `colr` is optional (ISO/IEC 23008-12, 6.5.5). Without it the colour
+/// information of the coded image applies, which for HEVC is the VUI.
+pub fn pick_nclx(own: Option<Nclx>, coded: Option<VideoSignal>) -> Nclx {
+    own.or_else(|| coded.map(Nclx::from)).unwrap_or_default()
+}
+
+/// The colour description to convert an item's samples with.
+fn resolve_nclx(ctx: &Context<'_>, id: u32, p: &ItemProps<'_>) -> Result<Nclx> {
+    if p.nclx.is_some() {
+        return Ok(pick_nclx(p.nclx, None));
+    }
+    // A grid has no bitstream of its own. Its tiles do, and one of them
+    // speaks for all: a grid is assembled from pictures of one kind.
+    let coded = match ctx.grid(id)? {
+        Some((_, tiles)) => match tiles.first() {
+            Some(tile) => coded_signal(&ctx.props(*tile)?)?,
+            None => None,
+        },
+        None => coded_signal(p)?,
+    };
+    Ok(pick_nclx(None, coded))
+}
+
+/// What the bitstream of a coded item says about colour.
+fn coded_signal(p: &ItemProps<'_>) -> Result<Option<VideoSignal>> {
+    let Some(hvcc) = p.hvcc.as_ref() else {
+        return Ok(None);
+    };
+    hevc::video_signal(&hvcc.parameter_sets())
 }

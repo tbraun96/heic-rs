@@ -55,8 +55,8 @@ pub fn dequant_and_transform(block: &mut [i32], n: usize, qp: i32, bit_depth: u8
 /// Builds a reference sample set with a deterministic ramp.
 pub fn ramp_refs(n: usize) -> Refs {
     let mut r = Refs::new(n);
-    for i in 0..4 * n + 1 {
-        r.buf[i] = ((i * 7 + 13) & 0xff) as u16;
+    for (i, sample) in r.buf[..4 * n + 1].iter_mut().enumerate() {
+        *sample = ((i * 7 + 13) & 0xff) as u16;
     }
     r
 }
