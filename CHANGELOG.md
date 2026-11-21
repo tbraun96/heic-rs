@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Context::declared_nclx`: what a file declares for an item -- its own `colr`, or its tiles'.
 - `Context::declared_icc`: the same resolution for the ICC flavour of `colr`, which `probe`'s
   `has_icc` now reports.
+- **4:2:2 pictures** (Canon and Sony `.HIF`) failed with "picture is not fully covered by slices"
+  or decoded with wrong colour. Table 8-3, which maps a chroma prediction mode to its 4:2:2
+  equivalent, had 20 of its 35 entries wrong (`decode/mode.rs`); the wrong mode also picked the
+  wrong coefficient scan for small chroma blocks, so CABAC lost sync. Pictures from a Sony a7 IV
+  now decode sample for sample like FFmpeg. A 4:2:2 golden vector now covers the path, made with
+  FFmpeg and x265 because `sips` cannot write 4:2:2 (`scripts/make-422-vector.sh`). Diagnosis in
+  #5 by **HeviLUO**.
 
 ## [0.1.4] - 2026-10-11
 

@@ -51,6 +51,15 @@ to write exact parser assertions.
 Each `.heic` has a matching `.ref.png` at the same dimensions (8-bit RGB, colour
 type 2).
 
+### `hevc/intra-422-10.hevc`
+
+A raw HEVC stream (Annex B), not a HEIC: one 128x128 intra picture of FFmpeg's
+synthetic `testsrc2` pattern, 4:2:2 10-bit in the RExt profile, encoded by x265.
+`sips` cannot write 4:2:2, which is what Canon and Sony cameras put in their `.HIF`
+files, so this one vector comes from `scripts/make-422-vector.sh` instead (Linux or
+macOS, needs FFmpeg with libx265). Its ground truth is FFmpeg's own decode, kept as
+a checksum in `src/hevc/golden_422.rs`, which the decoder must match sample for sample.
+
 ## Caveats for test authors
 
 * `irot` is present in **every** fixture with **angle 0**. Presence alone does not
