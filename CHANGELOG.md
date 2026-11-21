@@ -7,50 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-21
+
+Camera and phone files that decoded wrongly or not at all: 4:2:2 and 4:4:4 pictures, and colour
+that a file declares somewhere other than the item itself. Every one of these is the work of
+outside contributors -- thank you **Johann Woelper** (woelper), **jaredt17**, **HeviLUO**,
+**Sidney Markowitz**, **Akos Arinton** (ArintonAkos) and **JINGHAN YU**. MSRV is unchanged; the API
+only grows.
+
+### Added
+
+- `images`, `decode_image` and `probe_image`: every image of a file that is meant to be shown,
+  not only the primary one. The primary image comes first (#9, woelper).
+- `hevc::video_signal` and `hevc::VideoSignal`: what a parameter set says about colour (#7).
+- `decode::pick_nclx`: the order decoding goes by -- `colr`, then the bitstream, then the
+  fallback (#7).
+- `Context::declared_nclx` and `Context::declared_icc`: what a file declares for an item, its own
+  `colr` or its tiles' (#11).
+
 ### Fixed
 
-- 4:2:2 intra pictures decode to the right samples. The 4:2:2 chroma mode mapping (Table 8-3) was
-  wrong from mode 14 on, so chroma was predicted, and its residual scanned, with the wrong mode; on
-  real encoder output the CABAC state went off track and decoding failed with `Truncated`.
-- 4:4:4 intra pictures with 4x4 transform blocks decode. Those blocks code their own `cbf_cb` and
-  `cbf_cr` (7.3.8.8: `log2TrafoSize > 2 || ChromaArrayType == 3`); they were taken from the parent
-  block instead, which desynchronised the slice data.
+- **4:2:2 pictures** (Canon and Sony `.HIF`) failed with "picture is not fully covered by slices"
+  or `Truncated`, or decoded with wrong colour. Table 8-3, which maps a chroma prediction mode to
+  its 4:2:2 equivalent, had 20 of its 35 entries wrong (`decode/mode.rs`); the wrong mode also
+  picked the wrong coefficient scan for small chroma blocks, so CABAC lost sync. Pictures from a
+  Sony a7 IV now decode sample for sample like FFmpeg. Fixed independently in #10 (jaredt17) and
+  #15 (JINGHAN YU), diagnosed in #5 by HeviLUO; a 4:2:2 golden vector made with FFmpeg and x265
+  covers it (`scripts/make-422-vector.sh`).
+- **4:4:4 pictures** failed as soon as the encoder used 4x4 transform blocks. Those blocks code
+  their own `cbf_cb` and `cbf_cr` (7.3.8.8: `log2TrafoSize > 2 || ChromaArrayType == 3`); they
+  were taken from the parent block, which desynchronised the slice data (`decode/tu.rs`). Fixed
+  in #12 (woelper) and #15; a 4:4:4 golden vector covers it (`scripts/make-444-vector.sh`).
+- **A grid with no `colr` of its own** is converted with the colour its tiles declare. Canon
+  writes the description on the tiles and leaves the `grid` bare, so the grid was decoded with the
+  BT.709 limited-range fallback: duller than the file's own thumbnail. A OnePlus 11 photograph puts
+  its Display P3 `prof` only on its 48 tiles, and was taken for sRGB; `probe`'s `has_icc` now sees
+  it too (#11, HeviLUO and Sidney Markowitz).
+- **An item with no `colr` anywhere** is decoded with the colour description of its own bitstream
+  (`video_signal_type` in the HEVC VUI) instead of the fallback. Phone photos that say "full
+  range" only there came out with too much contrast (#7, woelper).
+
+  The order is now: the item's `colr`, its tiles' `colr`, the bitstream, the fallback.
+
 ### Changed
 
 - An unspecified matrix (`matrix_coefficients` 2) is read as BT.601 instead of BT.709, as libheif
-  does. Output changes only for files that leave the matrix unspecified.
-- An item without `colr` is decoded with the colour description of its own bitstream
-  (`video_signal_type` in the HEVC VUI) instead of the BT.709 limited-range fallback. Photos from
-  phones that say "full range" only there came out with too much contrast. For a grid the first
-  tile speaks for all of them.
+  does. Output changes only for files that leave the matrix unspecified (#8, woelper).
 
-### Added
+### Tests
 
-- `hevc::video_signal` and `hevc::VideoSignal`: what a parameter set says about colour.
-- `decode::pick_nclx`: the order decoding goes by, `colr`, then the bitstream, then the fallback.
-- An item that carries no `colr` is converted with the colour its coded tiles declare. Canon writes
-  the description on the tiles and leaves the `grid` bare, so the grid was decoded with the BT.709
-  limited-range fallback: duller than the file's own thumbnail, and never tone mapped. `colr` is
-  optional (ISO/IEC 23008-12, 6.5.5), and a derived item does not repeat the properties of the
-  coded pictures it is assembled from.
-
-### Added
-
-- `Context::declared_nclx`: what a file declares for an item -- its own `colr`, or its tiles'.
-- `Context::declared_icc`: the same resolution for the ICC flavour of `colr`, which `probe`'s
-  `has_icc` now reports.
-- **4:2:2 pictures** (Canon and Sony `.HIF`) failed with "picture is not fully covered by slices"
-  or decoded with wrong colour. Table 8-3, which maps a chroma prediction mode to its 4:2:2
-  equivalent, had 20 of its 35 entries wrong (`decode/mode.rs`); the wrong mode also picked the
-  wrong coefficient scan for small chroma blocks, so CABAC lost sync. Pictures from a Sony a7 IV
-  now decode sample for sample like FFmpeg. A 4:2:2 golden vector now covers the path, made with
-  FFmpeg and x265 because `sips` cannot write 4:2:2 (`scripts/make-422-vector.sh`). Diagnosis in
-  #5 by **HeviLUO**.
-- **4:4:4 pictures** failed with "ran out of bytes reading an HEVC bitstream" or "picture is not
-  fully covered by slices" as soon as the encoder used 4x4 transform blocks. 4:4:4 signals
-  `cbf_cb` and `cbf_cr` on them, 4:2:0 and 4:2:2 do not, and both were skipped, so CABAC lost
-  sync (`decode/tu.rs`). A 4:4:4 golden vector now covers it, made with FFmpeg and x265 because
-  `sips` cannot write 4:4:4 (`scripts/make-444-vector.sh`).
+- Two grids against Apple's decode: a 4:2:2 10-bit grid in the `.HIF` layout and a full-range
+  grid with no `colr`, regenerated by `scripts/make-grid-vectors.sh`; the PNG reader in the tests
+  now reads 16-bit references (#14, ArintonAkos).
+- CI: `actions/upload-artifact` 4 to 7 (#13).
 
 ## [0.1.4] - 2026-10-11
 
