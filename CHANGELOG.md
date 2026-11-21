@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 4:4:4 intra pictures with 4x4 transform blocks decode. Those blocks code their own `cbf_cb` and
   `cbf_cr` (7.3.8.8: `log2TrafoSize > 2 || ChromaArrayType == 3`); they were taken from the parent
   block instead, which desynchronised the slice data.
+### Changed
+
+- An unspecified matrix (`matrix_coefficients` 2) is read as BT.601 instead of BT.709, as libheif
+  does. Output changes only for files that leave the matrix unspecified.
 
 ## [0.1.4] - 2026-10-11
 
