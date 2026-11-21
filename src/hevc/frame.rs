@@ -120,6 +120,18 @@ impl Frame {
     }
 }
 
+/// What a bitstream says about its own colour: `video_signal_type` in the VUI
+/// (Rec. ITU-T H.265, E.2.1). A file that carries no `colr` is described by
+/// this and by nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoSignal {
+    /// `video_full_range_flag`.
+    pub full_range: bool,
+    /// `colour_primaries`, `transfer_characteristics` and `matrix_coeffs`, in
+    /// that order, when `colour_description_present_flag` is set.
+    pub description: Option<[u8; 3]>,
+}
+
 /// What a parameter set says about the pictures that follow it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Info {

@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - An unspecified matrix (`matrix_coefficients` 2) is read as BT.601 instead of BT.709, as libheif
   does. Output changes only for files that leave the matrix unspecified.
+- An item without `colr` is decoded with the colour description of its own bitstream
+  (`video_signal_type` in the HEVC VUI) instead of the BT.709 limited-range fallback. Photos from
+  phones that say "full range" only there came out with too much contrast. For a grid the first
+  tile speaks for all of them.
+
+### Added
+
+- `hevc::video_signal` and `hevc::VideoSignal`: what a parameter set says about colour.
+- `decode::pick_nclx`: the order decoding goes by, `colr`, then the bitstream, then the fallback.
 
 ## [0.1.4] - 2026-10-11
 

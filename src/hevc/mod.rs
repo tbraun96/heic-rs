@@ -50,7 +50,7 @@ pub mod bench_api;
 #[cfg(test)]
 mod golden;
 
-pub use frame::{ChromaFormat, Frame, Info};
+pub use frame::{ChromaFormat, Frame, Info, VideoSignal};
 
 #[cfg(test)]
 use nal::split_annexb;
@@ -76,6 +76,15 @@ pub fn probe(parameter_sets: &[&[u8]]) -> Result<Info> {
         bit_depth: sps.bit_depth_y,
         chroma: ChromaFormat::from_idc(sps.chroma_array_type).unwrap_or(ChromaFormat::Monochrome),
     })
+}
+
+/// Read what a sequence parameter set says about colour, without decoding.
+///
+/// `None` when the stream has no VUI or its VUI has no `video_signal_type`,
+/// which is the stream not saying; nothing is made up in that case.
+pub fn video_signal(parameter_sets: &[&[u8]]) -> Result<Option<VideoSignal>> {
+    let sets = decode::ParameterSets::parse(parameter_sets)?;
+    Ok(sets.first_sps()?.video_signal)
 }
 
 /// Decode one still picture from an Annex-B byte stream.
