@@ -30,18 +30,36 @@ pub fn decode(bytes: &[u8], options: &DecodeOptions) -> Result<Image> {
     // One thread pool for the whole decode, not one per stage. Inside, the
     // caller's choice has already been honoured, so `threads` there means
     // "the pool we are in" or "this thread" and nothing else.
-    parallel::scope(options.threads, |threads| run(bytes, options, threads))
+    parallel::scope(options.threads, |threads| {
+        run(bytes, None, options, threads)
+    })
+}
+
+/// Like [`decode`], for one of the images [`crate::images`] lists instead of
+/// the primary one.
+pub fn decode_image(bytes: &[u8], id: u32, options: &DecodeOptions) -> Result<Image> {
+    parallel::scope(options.threads, |threads| {
+        run(bytes, Some(id), options, threads)
+    })
 }
 
 /// The decode itself, already inside whatever thread pool the caller asked
 /// for.
-fn run(bytes: &[u8], options: &DecodeOptions, threads: Option<usize>) -> Result<Image> {
+fn run(
+    bytes: &[u8],
+    id: Option<u32>,
+    options: &DecodeOptions,
+    threads: Option<usize>,
+) -> Result<Image> {
     let ctx = Context::open(bytes)?;
-    let id = ctx.meta.primary;
+    let id = match id {
+        Some(id) => ctx.image(id)?,
+        None => ctx.meta.primary,
+    };
     let p = ctx.props(id)?;
     if options.strict && ctx.meta.props.unknown_essential(id).is_some() {
         return Err(Error::Unsupported(
-            "the primary item carries an essential property this build does not implement",
+            "the item carries an essential property this build does not implement",
         ));
     }
     let limit = options.pixel_limit();
