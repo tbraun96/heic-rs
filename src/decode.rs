@@ -72,7 +72,12 @@ fn run(
 
     let decoded = decode_item(&ctx, id, &p, threads)?;
     let alpha = alpha_frame(&ctx, id, options, limit, threads)?;
-    let nclx = resolve_nclx(&ctx, id, &p)?;
+    // `colr` is optional: the item's own, else its tiles' (a grid carries none where they do),
+    // else what the coded picture says about itself.
+    let nclx = match ctx.declared_nclx(id)? {
+        Some(declared) => declared,
+        None => resolve_nclx(&ctx, id, &p)?,
+    };
     let (layout, alpha) = (options.layout, alpha.as_ref());
     let image = match &decoded {
         Decoded::Picture(frame) => {
